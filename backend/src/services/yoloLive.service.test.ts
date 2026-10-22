@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { YoloLiveService, type ArduinoCommandSender, type SystemStateBroadcaster } from './yoloLive.service.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { YoloLiveService, type ArduinoCommandSender, type SignalTransition, type SystemStateBroadcaster } from './yoloLive.service.js';
+import { setYoloEnabled } from './yoloEnabled.js';
 
 function createMocks() {
   const commands: string[] = [];
@@ -173,5 +174,214 @@ describe('YoloLiveService pedestrian signal state', () => {
     service.setSignalStateProvider(null);
     service.refreshSignalState();
     expect(broadcasts[broadcasts.length - 1]).toMatchObject({ mode: 'auto', manualTimers: null });
+  });
+});
+
+const detectionPayload = () => ({
+  timestamp: Date.now(),
+  detected: true,
+  count: 1,
+  detections: [{ class: 'person', confidence: 0.9, x1: 0, y1: 0, x2: 1, y2: 1 }],
+});
+
+describe('YoloLiveService manual mode (auto cycle disabled)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('does not change the light from detections, and resumes cycles back in auto', () => {
+    vi.useFakeTimers();
+    const { commands, arduino, broadcaster } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    service.setAutoCycleEnabled(false);
+    for (let elapsed = 0; elapsed <= 5000; elapsed += 1000) {
+      service.handleDetection(detectionPayload());
+      vi.advanceTimersByTime(1000);
+    }
+    // Counts keep updating, but no phase or countdown command is ever sent.
+    expect(service.getSystemState().pedestrianCount).toBe(1);
+    expect(service.getSystemState().traffic).toBe('normal');
+    expect(service.getSystemState().cyclePhase).toBe('IDLE');
+    expect(commands).toEqual([]);
+
+    // Back in automatic mode a fresh detection reaches the threshold again.
+    service.setAutoCycleEnabled(true);
+    service.handleDetection(detectionPayload());
+    vi.advanceTimersByTime(5000);
+    service.handleDetection({ ...detectionPayload(), timestamp: Date.now() });
+    expect(service.getSystemState().traffic).toBe('caution');
+    expect(commands).toContain('CAUTION_TRAFFIC');
+
+    service.close();
+  });
+
+  it('lets a cycle that is already running finish when manual mode begins', () => {
+    vi.useFakeTimers();
+    const { commands, arduino, broadcaster } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    service.handleDetection(detectionPayload());
+    vi.advanceTimersByTime(5000);
+    service.handleDetection({ ...detectionPayload(), timestamp: Date.now() });
+    expect(service.getSystemState().traffic).toBe('caution');
+
+    service.setAutoCycleEnabled(false);
+    service.handleDetection({ ...detectionPayload(), timestamp: Date.now() });
+
+    // The running cycle is not cut off: it continues on its own timers.
+    vi.advanceTimersByTime(3000);
+    expect(service.getSystemState().traffic).toBe('stopped');
+    expect(commands).toContain('STOP_TRAFFIC');
+
+    vi.advanceTimersByTime(15000);
+    expect(service.getSystemState().traffic).toBe('normal');
+    expect(commands).toContain('NORMAL_TRAFFIC');
+
+    // ...and no new cycle starts from the detections reported in manual mode.
+    for (let elapsed = 0; elapsed <= 6000; elapsed += 1000) {
+      service.handleDetection(detectionPayload());
+      vi.advanceTimersByTime(1000);
+    }
+    expect(service.getSystemState().traffic).toBe('normal');
+
+    service.close();
+  });
+});
+
+describe('YoloLiveService forced phases', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('applies a held phase immediately and broadcasts without waiting for the throttle', () => {
+    const { commands, arduino, broadcaster, broadcasts } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    const before = broadcasts.length;
+    service.forcePhase('RED', { triggeredBy: 'admin' });
+
+    expect(service.getSystemState().traffic).toBe('stopped');
+    expect(service.getSystemState().pedState).toBe('WALK');
+    expect(commands).toContain('STOP_TRAFFIC');
+    expect(broadcasts.length).toBeGreaterThan(before);
+    expect(broadcasts[broadcasts.length - 1]).toMatchObject({ traffic: 'stopped' });
+
+    // Held: no countdown runs and the phase stays past the stop duration.
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(60000);
+    expect(service.getSystemState().traffic).toBe('stopped');
+
+    service.close();
+  });
+
+  it('returns a forced phase with a duration to GREEN after the duration', () => {
+    vi.useFakeTimers();
+    const { commands, arduino, broadcaster } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    service.forcePhase('RED', { durationMs: 4000, triggeredBy: 'admin' });
+    expect(service.getSystemState().traffic).toBe('stopped');
+    expect(service.getSystemState().carTimer).toBe(4);
+    expect(service.getSystemState().pedTimer).toBe(4);
+
+    vi.advanceTimersByTime(4000);
+    expect(service.getSystemState().traffic).toBe('normal');
+    expect(service.getSystemState().carTimer).toBeNull();
+    expect(commands).toContain('NORMAL_TRAFFIC');
+
+    service.close();
+  });
+
+  it('cancels a running cycle when a phase is forced', () => {
+    vi.useFakeTimers();
+    const { commands, arduino, broadcaster } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    service.handleDetection(detectionPayload());
+    vi.advanceTimersByTime(5000);
+    service.handleDetection({ ...detectionPayload(), timestamp: Date.now() });
+    expect(service.getSystemState().traffic).toBe('caution');
+
+    service.forcePhase('GREEN', { triggeredBy: 'admin' });
+    expect(service.getSystemState().traffic).toBe('normal');
+    expect(commands).toContain('NORMAL_TRAFFIC');
+    expect(commands).toContain('COUNTDOWN:CARS:00');
+
+    vi.advanceTimersByTime(20000);
+    expect(service.getSystemState().traffic).toBe('normal');
+
+    service.close();
+  });
+});
+
+describe('YoloLiveService transition listeners', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('fires for every automatic phase change with auto attribution', () => {
+    vi.useFakeTimers();
+    const { arduino, broadcaster } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    const transitions: SignalTransition[] = [];
+    service.onTransition((transition) => transitions.push(transition));
+
+    service.handleDetection(detectionPayload());
+    vi.advanceTimersByTime(5000);
+    service.handleDetection({ ...detectionPayload(), timestamp: Date.now() });
+    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(15000);
+
+    expect(transitions.map((transition) => transition.phase)).toEqual(['YELLOW', 'RED', 'GREEN']);
+    expect(transitions.every((transition) => transition.triggeredBy === 'auto')).toBe(true);
+    expect(transitions[0]).toMatchObject({ carTimer: 3, pedTimer: null, pedState: 'DONT_WALK' });
+    expect(transitions[1]).toMatchObject({ carTimer: 15, pedTimer: 15, pedState: 'WALK' });
+    expect(transitions[2]).toMatchObject({ carTimer: null, pedTimer: null, pedState: 'DONT_WALK' });
+
+    service.close();
+  });
+
+  it('attributes a manual cycle and forced phases to admin', () => {
+    vi.useFakeTimers();
+    const { arduino, broadcaster } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    const transitions: SignalTransition[] = [];
+    service.onTransition((transition) => transitions.push(transition));
+
+    service.forcePhase('RED', { triggeredBy: 'admin' });
+    service.runManualCycle({ yellowMs: 2000, redMs: 5000 }, 'admin');
+    vi.advanceTimersByTime(7000);
+
+    expect(transitions.map((transition) => transition.phase)).toEqual(['RED', 'YELLOW', 'RED', 'GREEN']);
+    expect(transitions.every((transition) => transition.triggeredBy === 'admin')).toBe(true);
+
+    service.close();
+  });
+});
+
+describe('YoloLiveService YOLO enable toggle', () => {
+  beforeEach(() => setYoloEnabled(true));
+  afterEach(() => setYoloEnabled(true));
+
+  it('applies the toggle without a restart and broadcasts its state at once', () => {
+    const { arduino, broadcaster, broadcasts } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    expect(service.getSystemState().yolo).toBe('offline'); // no feed reported yet
+
+    setYoloEnabled(false);
+    const before = broadcasts.length;
+    service.refreshYoloEnabled();
+
+    expect(service.getSystemState().yolo).toBe('offline');
+    expect(broadcasts.length).toBeGreaterThan(before);
+    // The engine stays offline while disabled and never starts a cycle.
+    service.handleDetection(detectionPayload());
+    expect(service.getSystemState().yolo).toBe('offline');
+    expect(service.getSystemState().traffic).toBe('normal');
+
+    // Re-enabling takes effect on the next detection, again without a restart.
+    setYoloEnabled(true);
+    service.handleDetection(detectionPayload());
+    expect(service.getSystemState().yolo).toBe('online');
+
+    service.close();
   });
 });

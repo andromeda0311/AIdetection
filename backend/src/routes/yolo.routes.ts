@@ -15,6 +15,7 @@ import { validate } from '../middleware/validate.js';
 import { liveDetectionBody, yoloDetectionBody } from '../dto/detection.dto.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { toggleYolo } from '../services/yoloEnabled.js';
+import { yoloLive } from '../services/yoloLive.instance.js';
 
 const router = Router();
 
@@ -28,6 +29,9 @@ router.get('/arduino/status', authenticate, asyncHandler(getArduinoStatus));
 router.get('/system/status', authenticate, asyncHandler(getSystemStatus));
 router.post('/yolo/toggle', authenticate, authorize('admin'), async (req, res) => {
   const newState = toggleYolo();
+  // Apply the toggle immediately (detection state re-evaluated and broadcast)
+  // instead of only after the next service restart.
+  yoloLive.refreshYoloEnabled();
   res.json({ ok: true, enabled: newState });
 });
 

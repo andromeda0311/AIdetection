@@ -1,14 +1,14 @@
 import config from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { createSignalEvent } from '../models/SignalEvent.js';
-import { createSignalController, type SignalController, type PedestrianState } from './signal/controller.js';
 import { appEvents, DETECTION_COMPLETED, type DetectionCompletedEvent } from './events.js';
 import { getConfig, upsertConfig, type SignalConfigData } from '../models/SignalConfig.js';
 import { SignalStateEnum, TriggeredByEnum } from '../entities/SignalEvent.js';
 import { SignalEvent } from '../entities/SignalEvent.js';
 import { logArduinoActivation } from './trafficLightAudit.service.js';
 import { ArduinoTransportEnum } from '../entities/TrafficLightAuditLog.js';
-import { getSignalIo, yoloLive } from './yoloLive.instance.js';
+import { getSignalIo, yoloLive as liveEngine } from './yoloLive.instance.js';
+import type { SignalPhase, SignalTransition, SignalTransitionTrigger, TrafficSignalEngine } from './yoloLive.service.js';
 
 export interface SignalOptions {
   yellowMs: number;
@@ -28,29 +28,36 @@ export interface ManualTimers {
   pedWalkMs: number;
 }
 
-type TrafficState = 'GREEN' | 'YELLOW' | 'RED';
 type SignalMode = 'auto' | 'manual';
 
+function stateFromPhase(phase: SignalPhase): SignalStateEnum {
+  switch (phase) {
+    case 'YELLOW':
+      return SignalStateEnum.YELLOW;
+    case 'RED':
+      return SignalStateEnum.RED;
+    default:
+      return SignalStateEnum.GREEN;
+  }
+}
+
+function triggeredByFrom(trigger: SignalTransitionTrigger): TriggeredByEnum {
+  return trigger === 'auto' ? TriggeredByEnum.AUTO : TriggeredByEnum.ADMIN;
+}
+
+/** Audit rows must reflect where the commands really go: the live YOLO Arduino transport. */
+function auditTransport(transport: 'log' | 'serial'): ArduinoTransportEnum {
+  return transport === 'serial' ? ArduinoTransportEnum.SERIAL : ArduinoTransportEnum.LOG;
+}
+
 /**
- * Owns the traffic light state machine.
- *
- *   GREEN -> (pedestrian detected) -> YELLOW (3s) -> RED (20s) -> GREEN
- *
- * RED is extended while new detections with pedestrians keep arriving; when no
- * more pedestrians are detected it returns to GREEN after the RED period.
+ * Coordinates the single live traffic-light engine (YoloLiveService): operating
+ * mode, admin manual commands, timer settings and persistence. It never drives
+ * the light itself — durations, timers and Arduino commands belong to the
+ * engine — and the SignalEvent rows, the audit log and the `signal:update`
+ * broadcasts are recorded from the transitions the engine reports.
  */
 export class TrafficSignalMachine {
-  private state: SignalStateEnum = SignalStateEnum.GREEN;
-  private stateSince: Date = new Date();
-  private yellowTimer: NodeJS.Timeout | null = null;
-  private redTimer: NodeJS.Timeout | null = null;
-  private redCountdownTimer: NodeJS.Timeout | null = null;
-  private lastDetectionId: string | null = null;
-  private lastAdminUserId: string | null = null;
-  private pedState: PedestrianState = 'DONT_WALK';
-  private redRemaining: number = 0;
-
-  // Mode and manual timers
   private mode: SignalMode = 'auto';
   private manualTimers: ManualTimers = {
     greenMs: 30000,
@@ -58,16 +65,25 @@ export class TrafficSignalMachine {
     redMs: 20000,
     pedWalkMs: 15000,
   };
+  private lastDetectionId: string | null = null;
+  private lastAdminUserId: string | null = null;
+  private unsubscribeTransition: (() => void) | null = null;
 
   constructor(
-    private readonly controller: SignalController,
+    private readonly yoloLive: TrafficSignalEngine,
     private options: SignalOptions,
     private readonly transport: ArduinoTransportEnum,
     private readonly recordEvent: (log: TransitionLog) => Promise<SignalEvent | null> = async () => null,
-  ) {}
+  ) {
+    // Every phase change (automatic cycles, forced phases, manual cycles) is
+    // persisted and audited here, so the Audit Logs page covers all of them.
+    this.unsubscribeTransition = yoloLive.onTransition((transition) => this.handleTransition(transition));
+  }
 
+  /** Derived from the live engine's current phase. */
   getStatus(): { state: SignalStateEnum; since: Date } {
-    return { state: this.state, since: this.stateSince };
+    const { phase, since } = this.yoloLive.getTrafficPhase();
+    return { state: stateFromPhase(phase), since };
   }
 
   getOptions(): SignalOptions {
@@ -85,13 +101,12 @@ export class TrafficSignalMachine {
   async setMode(mode: SignalMode): Promise<void> {
     this.mode = mode;
     await this.persistConfig();
-    if (mode === 'manual') {
-      this.clearTimers();
-      this.clearRedCountdown();
-    }
+    // Manual mode keeps the live detections reporting, but phases become
+    // admin-driven only (the engine finishes any cycle already under way).
+    this.yoloLive.setAutoCycleEnabled(mode === 'auto');
     this.broadcastModeChange();
     // Keep the mode in the live system state (system:state, /api/system/status) in sync.
-    yoloLive.refreshSignalState();
+    this.yoloLive.refreshSignalState();
   }
 
   async setManualTimers(timers: Partial<ManualTimers>): Promise<void> {
@@ -99,10 +114,10 @@ export class TrafficSignalMachine {
     await this.persistConfig();
     this.broadcastManualTimersChange();
     // Keep the manual timers in the live system state in sync as well.
-    yoloLive.refreshSignalState();
+    this.yoloLive.refreshSignalState();
     // Keep the auto (YOLO) cycle in sync with the configured red stop duration.
     if (timers.redMs !== undefined) {
-      yoloLive.setDurations({ stopDurationMs: timers.redMs });
+      this.yoloLive.setDurations({ stopDurationMs: timers.redMs });
     }
   }
 
@@ -127,191 +142,65 @@ export class TrafficSignalMachine {
     return this.mode === 'manual' ? this.manualTimers.redMs : this.options.redMs;
   }
 
-  private getPedWalkDuration(): number {
-    return this.mode === 'manual' ? this.manualTimers.pedWalkMs : this.options.redMs;
-  }
-
   onDetection(event: DetectionCompletedEvent): void {
-    if (this.mode === 'manual') return; // Ignore YOLO detections in manual mode
+    if (this.mode === 'manual') return; // Ignore detections in manual mode
     this.lastDetectionId = event.detectionId;
-    if (event.pedestrianDetected) {
-      this.beginPedestrianCycle();
+    // Uploaded-video detections reuse the live engine (YELLOW -> RED -> GREEN)
+    // in auto mode; during an already running cycle they change nothing.
+    if (event.pedestrianDetected && !this.yoloLive.isCycleActive()) {
+      this.yoloLive.runManualCycle(
+        { yellowMs: this.getYellowDuration(), redMs: this.getRedDuration() },
+        'auto',
+      );
     }
-  }
-
-  private beginPedestrianCycle(): void {
-    this.clearTimers();
-
-    if (this.state === SignalStateEnum.RED) {
-      this.redRemaining = this.getRedDuration();
-      this.startRedCountdown();
-      this.redTimer = setTimeout(() => void this.endRed(), this.getRedDuration());
-      return;
-    }
-
-    if (this.state === SignalStateEnum.YELLOW) {
-      this.yellowTimer = setTimeout(() => void this.goRed(), this.getYellowDuration());
-      return;
-    }
-
-    void this.transition(SignalStateEnum.YELLOW, TriggeredByEnum.AUTO);
-    this.yellowTimer = setTimeout(() => void this.goRed(), this.getYellowDuration());
-  }
-
-  private async goRed(): Promise<void> {
-    await this.transition(SignalStateEnum.RED, TriggeredByEnum.AUTO);
-    this.redRemaining = this.getRedDuration();
-    this.startRedCountdown();
-    this.redTimer = setTimeout(() => void this.endRed(), this.getRedDuration());
-  }
-
-  private startRedCountdown(): void {
-    this.clearRedCountdown();
-    this.redCountdownTimer = setInterval(() => {
-      this.redRemaining = Math.max(0, this.redRemaining - 1000);
-      this.sendTimerUpdates();
-      if (this.redRemaining <= 0) {
-        this.clearRedCountdown();
-      }
-    }, 1000);
-  }
-
-  private clearRedCountdown(): void {
-    if (this.redCountdownTimer) {
-      clearInterval(this.redCountdownTimer);
-      this.redCountdownTimer = null;
-    }
-  }
-
-  private sendTimerUpdates(): void {
-    // Always send car timer (seconds remaining) to Arduino for display. Convert milliseconds to seconds.
-    const carTimer = this.redRemaining > 0 ? Math.ceil(this.redRemaining / 1000) : null;
-    const pedTimer = this.state === SignalStateEnum.RED ? Math.ceil(this.redRemaining / 1000) : null;
-    this.controller.send(this.state as TrafficState, this.pedState, carTimer, pedTimer).catch((err) => {
-      logger.error({ err }, 'Failed to send timer update');
-    });
-  }
-
-  private async endRed(): Promise<void> {
-    this.clearRedCountdown();
-    await this.transition(SignalStateEnum.GREEN, TriggeredByEnum.AUTO);
   }
 
   /** Admin manual override — clears any running cycle. */
   async forceState(state: SignalStateEnum, userId?: string): Promise<void> {
     this.lastAdminUserId = userId ?? null;
-    this.clearTimers();
-    this.clearRedCountdown();
-    await this.transition(state, TriggeredByEnum.ADMIN);
+    this.yoloLive.forcePhase(state, { triggeredBy: TriggeredByEnum.ADMIN });
+    // The forced transition fired synchronously with its own user snapshot.
     this.lastAdminUserId = null;
-  }
-
-  /** Run a full automated manual cycle: Green (greenMs) -> Yellow (yellowMs) -> Red (redMs) -> Green */
-  async triggerManualCycle(userId?: string): Promise<void> {
-    this.lastAdminUserId = userId ?? null;
-    this.clearTimers();
-    this.clearRedCountdown();
-
-    const greenMs = this.manualTimers.greenMs;
-    const yellowMs = this.manualTimers.yellowMs;
-    const redMs = this.manualTimers.redMs;
-
-    const greenSec = Math.ceil(greenMs / 1000);
-    const yellowSec = Math.ceil(yellowMs / 1000);
-    const redSec = Math.ceil(redMs / 1000);
-
-    // Step 1: GREEN
-    await this.transition(SignalStateEnum.GREEN, TriggeredByEnum.ADMIN);
-    this.startManualPhaseCountdown(greenSec, 'GREEN');
-
-    this.yellowTimer = setTimeout(async () => {
-      // Step 2: YELLOW
-      await this.transition(SignalStateEnum.YELLOW, TriggeredByEnum.ADMIN);
-      this.startManualPhaseCountdown(yellowSec, 'YELLOW');
-
-      this.redTimer = setTimeout(async () => {
-        // Step 3: RED
-        await this.transition(SignalStateEnum.RED, TriggeredByEnum.ADMIN);
-        this.startManualPhaseCountdown(redSec, 'RED');
-
-        setTimeout(async () => {
-          // Return to GREEN on complete
-          await this.transition(SignalStateEnum.GREEN, TriggeredByEnum.ADMIN);
-          this.clearRedCountdown();
-          this.lastAdminUserId = null;
-        }, redMs);
-
-      }, yellowMs);
-
-    }, greenMs);
-  }
-
-  private startManualPhaseCountdown(seconds: number, _phase: 'GREEN' | 'YELLOW' | 'RED'): void {
-    this.clearRedCountdown();
-    this.redRemaining = seconds * 1000;
-    this.sendTimerUpdates();
-
-    this.redCountdownTimer = setInterval(() => {
-      this.redRemaining = Math.max(0, this.redRemaining - 1000);
-      this.sendTimerUpdates();
-      if (this.redRemaining <= 0) {
-        this.clearRedCountdown();
-      }
-    }, 1000);
   }
 
   /** Force state with optional custom duration (manual mode only). */
   async forceStateWithDuration(state: SignalStateEnum, durationMs?: number, userId?: string): Promise<void> {
     this.lastAdminUserId = userId ?? null;
-    this.clearTimers();
-    this.clearRedCountdown();
-
-    // Store custom duration for this transition
-    if (durationMs && state === SignalStateEnum.RED) {
-      this.redRemaining = durationMs;
-    } else if (durationMs && state === SignalStateEnum.YELLOW) {
-      // Yellow with custom duration - will transition to RED after duration
-      this.yellowTimer = setTimeout(() => void this.goRed(), durationMs);
-      await this.transition(state, TriggeredByEnum.ADMIN);
-      this.lastAdminUserId = null;
-      return;
-    }
-
-    await this.transition(state, TriggeredByEnum.ADMIN);
+    this.yoloLive.forcePhase(state, { durationMs, triggeredBy: TriggeredByEnum.ADMIN });
     this.lastAdminUserId = null;
   }
 
-  private async transition(state: SignalStateEnum, triggeredBy: TriggeredByEnum): Promise<void> {
-    if (state === this.state) return;
-    this.state = state;
-    this.stateSince = new Date();
+  /** Run a full automated manual cycle: Yellow (yellowMs) -> Red (redMs) -> Green */
+  async triggerManualCycle(userId?: string): Promise<void> {
+    // Every leg of the cycle is attributed to the admin until the final GREEN
+    // transition is recorded (see handleTransition).
+    this.lastAdminUserId = userId ?? null;
+    this.yoloLive.runManualCycle(
+      { yellowMs: this.manualTimers.yellowMs, redMs: this.manualTimers.redMs },
+      'admin',
+    );
+  }
 
-    // Determine pedestrian state based on traffic state
-    this.pedState = state === SignalStateEnum.RED ? 'WALK' : 'DONT_WALK';
-
-    // Calculate timer values for display
-    let carTimer: number | null = null;
-    let pedTimer: number | null = null;
-
-    switch (state) {
-      case SignalStateEnum.GREEN:
-        carTimer = null;
-        pedTimer = null;
-        break;
-      case SignalStateEnum.YELLOW:
-        carTimer = Math.ceil(this.getYellowDuration() / 1000);
-        pedTimer = null;
-        break;
-      case SignalStateEnum.RED:
-        carTimer = Math.ceil(this.getRedDuration() / 1000);
-        pedTimer = Math.ceil(this.getPedWalkDuration() / 1000);
-        this.redRemaining = this.getRedDuration();
-        break;
+  private handleTransition(transition: SignalTransition): void {
+    // Snapshot synchronously: forced and manual transitions fire inside the
+    // admin request while lastAdminUserId is still set. DB writes below are
+    // never awaited inside the light's timing path.
+    const userId = this.lastAdminUserId;
+    // A manual cycle ends when the phase returns to GREEN with no timers left.
+    if (
+      userId !== null &&
+      transition.phase === 'GREEN' &&
+      transition.triggeredBy === 'admin' &&
+      !this.yoloLive.isCycleActive()
+    ) {
+      this.lastAdminUserId = null;
     }
+    void this.recordTransition(transition, userId);
+  }
 
-    await this.controller.send(state as TrafficState, this.pedState, carTimer, pedTimer).catch((err) => {
-      logger.error({ err }, 'Failed to send signal command');
-    });
+  private async recordTransition(transition: SignalTransition, userId: string | null): Promise<void> {
+    const state = stateFromPhase(transition.phase);
+    const triggeredBy = triggeredByFrom(transition.triggeredBy);
 
     let savedSignalEvent: SignalEvent | null = null;
     try {
@@ -329,7 +218,7 @@ export class TrafficSignalMachine {
           triggeredBy,
           detectionId: this.lastDetectionId,
           transport: this.transport,
-          userId: this.lastAdminUserId,
+          userId,
         });
       } catch (err) {
         logger.error({ err }, 'Failed to log Arduino activation audit');
@@ -339,42 +228,26 @@ export class TrafficSignalMachine {
     // Broadcast real‑time update
     getSignalIo()?.emit('signal:update', {
       state,
-      pedState: this.pedState,
-      carTimer,
-      pedTimer,
+      pedState: transition.pedState,
+      carTimer: transition.carTimer,
+      pedTimer: transition.pedTimer,
       triggeredBy,
       timestamp: new Date().toISOString(),
     });
   }
 
-  private clearTimers(): void {
-    if (this.yellowTimer) clearTimeout(this.yellowTimer);
-    if (this.redTimer) clearTimeout(this.redTimer);
-    this.yellowTimer = null;
-    this.redTimer = null;
-  }
-
   async close(): Promise<void> {
-    this.clearTimers();
-    this.clearRedCountdown();
-    await this.controller.close();
+    if (this.unsubscribeTransition) {
+      this.unsubscribeTransition();
+      this.unsubscribeTransition = null;
+    }
   }
 
-  /** Update timing options (e.g., from admin). */
+  /** Update timing options (e.g., from admin); applies from the next cycle. */
   async updateOptions(newOpts: Partial<SignalOptions>): Promise<void> {
     this.options = { ...this.options, ...newOpts };
     // Persist to DB
     await upsertConfig({ yellowMs: this.options.yellowMs, redMs: this.options.redMs });
-    // If currently in a timed state, restart its timer with new duration
-    this.clearTimers();
-    this.clearRedCountdown();
-    if (this.state === SignalStateEnum.YELLOW) {
-      this.yellowTimer = setTimeout(() => void this.goRed(), this.getYellowDuration());
-    } else if (this.state === SignalStateEnum.RED) {
-      this.redRemaining = this.getRedDuration();
-      this.startRedCountdown();
-      this.redTimer = setTimeout(() => void this.endRed(), this.getRedDuration());
-    }
   }
 
   private broadcastModeChange(): void {
@@ -390,9 +263,9 @@ export class TrafficSignalMachine {
 let initialOptions: SignalOptions = { yellowMs: config.signal.yellowMs, redMs: config.signal.redMs };
 
 export const trafficSignal = new TrafficSignalMachine(
-  createSignalController(config.signal),
+  liveEngine,
   initialOptions,
-  config.signal.transport as ArduinoTransportEnum,
+  auditTransport(config.yoloLive.arduinoTransport),
   async (log) => {
     return createSignalEvent({
       state: log.state,
@@ -404,7 +277,7 @@ export const trafficSignal = new TrafficSignalMachine(
 
 // Share the operating mode and manual timers with the live system state that
 // yoloLive broadcasts (system:state) and /api/system/status returns.
-yoloLive.setSignalStateProvider(() => ({
+liveEngine.setSignalStateProvider(() => ({
   mode: trafficSignal.getMode(),
   manualTimers: trafficSignal.getManualTimers(),
 }));
@@ -413,7 +286,7 @@ yoloLive.setSignalStateProvider(() => ({
 export async function initTrafficSignal(): Promise<void> {
   const dbConfig = await getConfig();
   if (dbConfig) {
-    // Apply mode
+    // Apply mode (also stops automatic cycles when the persisted mode is manual)
     if (dbConfig.mode) {
       trafficSignal.setMode(dbConfig.mode);
     }
@@ -432,7 +305,7 @@ export async function initTrafficSignal(): Promise<void> {
     // Keep the auto (YOLO) cycle stop duration in sync with the persisted red value.
     const persistedRedMs = dbConfig.manualRedMs ?? dbConfig.redMs;
     if (persistedRedMs !== undefined) {
-      yoloLive.setDurations({ stopDurationMs: persistedRedMs });
+      liveEngine.setDurations({ stopDurationMs: persistedRedMs });
     }
   }
 }

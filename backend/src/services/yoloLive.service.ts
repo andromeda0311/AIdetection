@@ -1,6 +1,8 @@
 import { Server as SocketIOServer } from 'socket.io';
 import type { Socket } from 'socket.io';
 import { isYoloEnabled } from './yoloEnabled.js';
+import { logger } from '../utils/logger.js';
+import type { SignalStateEnum, TriggeredByEnum } from '../entities/SignalEvent.js';
 
 export interface YoloDetectionPayload {
   timestamp: number;
@@ -109,6 +111,52 @@ export interface DurationOptions {
   detectionThresholdMs?: number;
   yellowDurationMs?: number;
   stopDurationMs?: number;
+}
+
+/**
+ * Traffic-light phase. Carries the same values as SignalStateEnum ('GREEN' /
+ * 'YELLOW' / 'RED'); the signal machine maps it onto the enum when recording
+ * events, so the live engine needs no runtime import for it.
+ */
+export type SignalPhase = 'GREEN' | 'YELLOW' | 'RED';
+
+/** Who changed the phase: 'auto' = automatic cycle, 'admin' = admin command. Same values as TriggeredByEnum. */
+export type SignalTransitionTrigger = 'auto' | 'admin';
+
+/** A phase change the engine reports on every transition (see onTransition). */
+export interface SignalTransition {
+  phase: SignalPhase;
+  triggeredBy: SignalTransitionTrigger;
+  carTimer: number | null;
+  pedTimer: number | null;
+  pedState: 'WALK' | 'DONT_WALK';
+}
+
+export interface ManualCycleTimers {
+  yellowMs: number;
+  redMs: number;
+}
+
+export interface ForcePhaseOptions {
+  /** When set, the phase runs with a countdown and returns to GREEN afterwards; otherwise it is held. */
+  durationMs?: number;
+  triggeredBy: SignalTransitionTrigger;
+}
+
+/**
+ * The parts of the live engine the signal machine uses. YoloLiveService is the
+ * single source of truth for the light; trafficSignal requests changes on it
+ * and records the audit trail from the transitions the engine reports.
+ */
+export interface TrafficSignalEngine {
+  setAutoCycleEnabled(enabled: boolean): void;
+  forcePhase(phase: SignalPhase, options: ForcePhaseOptions): void;
+  runManualCycle(timers: ManualCycleTimers, triggeredBy: SignalTransitionTrigger): void;
+  getTrafficPhase(): { phase: SignalPhase; since: Date };
+  isCycleActive(): boolean;
+  refreshSignalState(): void;
+  setDurations(options: DurationOptions): void;
+  onTransition(listener: (transition: SignalTransition) => void): () => void;
 }
 
 export type ArduinoCommand =
@@ -228,6 +276,10 @@ export class YoloLiveService {
 
   private detectionStartedAt: number | null = null;
   private trafficCycleActive = false;
+  private autoCycleEnabled = true;
+  private currentPhase: SignalPhase = 'GREEN';
+  private currentPhaseSince: Date = new Date();
+  private transitionListeners = new Set<(transition: SignalTransition) => void>();
   private signalStateProvider: SignalRuntimeStateProvider | null = null;
   private yellowTimer: NodeJS.Timeout | null = null;
   private stopTimer: NodeJS.Timeout | null = null;
@@ -237,8 +289,6 @@ export class YoloLiveService {
   private lastBroadcastAt = 0;
   private lastBroadcastSignature = '';
 
-  private readonly yoloEnabled: boolean;
-
   constructor(
     private readonly arduino: ArduinoCommandSender,
     private readonly broadcaster: SystemStateBroadcaster,
@@ -247,7 +297,6 @@ export class YoloLiveService {
     private stopDurationMs: number,
     private readonly broadcastIntervalMs = 500,
   ) {
-    this.yoloEnabled = isYoloEnabled();
     this.systemState.thresholdRequiredSec = this.detectionThresholdMs / 1000;
     this.systemState.autoStopSec = Math.round(this.stopDurationMs / 1000);
   }
@@ -270,9 +319,11 @@ export class YoloLiveService {
 
   handleDetection(payload: YoloDetectionPayload): void {
     const now = Date.now();
+    // Read live so the admin enable/disable toggle applies without a restart.
+    const yoloEnabled = isYoloEnabled();
     this.lastDetectionAt = now;
-    this.systemState.yolo = this.yoloEnabled ? 'online' : 'offline';
-    this.systemState.camera = this.yoloEnabled ? 'online' : 'offline';
+    this.systemState.yolo = yoloEnabled ? 'online' : 'offline';
+    this.systemState.camera = yoloEnabled ? 'online' : 'offline';
     this.systemState.arduino = this.arduino.getStatus();
     this.systemState.pedestrianDetected = payload.detected;
     this.systemState.pedestrianCount = payload.count;
@@ -288,18 +339,19 @@ export class YoloLiveService {
     this.systemState.updatedAt = payload.timestamp || now;
     this.systemState.thresholdRequiredSec = this.detectionThresholdMs / 1000;
 
-    if (payload.detected && this.yoloEnabled) {
+    if (payload.detected && yoloEnabled) {
       if (this.detectionStartedAt === null) {
         this.detectionStartedAt = now;
       }
       this.systemState.detectionDuration = (now - this.detectionStartedAt) / 1000;
 
-      if (!this.trafficCycleActive) {
+      // In manual mode counts keep updating, but the light is only changed by
+      // admin commands; a cycle already running when manual began finishes.
+      if (this.autoCycleEnabled && !this.trafficCycleActive) {
         this.systemState.cyclePhase = 'THRESHOLD';
-      }
-
-      if (this.systemState.detectionDuration >= this.detectionThresholdMs / 1000 && !this.trafficCycleActive) {
-        this.beginPedestrianCycle();
+        if (this.systemState.detectionDuration >= this.detectionThresholdMs / 1000) {
+          this.runSignalSequence(this.yellowDurationMs, this.stopDurationMs, 'auto');
+        }
       }
     } else {
       this.detectionStartedAt = null;
@@ -313,7 +365,7 @@ export class YoloLiveService {
   }
 
   markYoloOffline(): void {
-    if (!this.yoloEnabled) return;
+    if (!isYoloEnabled()) return;
     const staleMs = 5000;
     if (Date.now() - this.lastDetectionAt > staleMs) {
       if (this.systemState.yolo === 'offline' && this.detectionStartedAt === null) return;
@@ -344,41 +396,220 @@ export class YoloLiveService {
     }
   }
 
-  private beginPedestrianCycle(): void {
-    this.clearCycleTimers();
-    this.trafficCycleActive = true;
-    this.systemState.cycleActive = true;
-    this.systemState.cyclePhase = 'CAUTION';
-    this.systemState.traffic = 'caution';
+  /** Register where the operating mode and manual timer settings come from (the signal machine). */
+  setSignalStateProvider(provider: SignalRuntimeStateProvider | null): void {
+    this.signalStateProvider = provider;
+    this.refreshSignalState();
+  }
 
-    const cautionSec = Math.ceil(this.yellowDurationMs / 1000);
-    this.systemState.cycleRemainingSec = cautionSec;
-    this.arduino.send('CAUTION_TRAFFIC');
-    this.startCountdownForDuration(cautionSec);
+  /**
+   * Manual mode: live detections keep updating counts, boxes and camera state,
+   * but never start a pedestrian cycle. A cycle already running when manual
+   * mode begins finishes normally; no new one starts. Switching back to auto
+   * requires a fresh continuous detection before a cycle may start again.
+   */
+  setAutoCycleEnabled(enabled: boolean): void {
+    if (this.autoCycleEnabled === enabled) return;
+    this.autoCycleEnabled = enabled;
+    if (enabled) {
+      // Stale detection progress from the manual period must not count
+      // towards the threshold; the next cycle needs a fresh one.
+      this.detectionStartedAt = null;
+      this.systemState.detectionDuration = 0;
+      if (!this.trafficCycleActive) {
+        this.systemState.cyclePhase = 'IDLE';
+        this.systemState.cycleRemainingSec = 0;
+      }
+    }
     this.maybeBroadcast(Date.now(), false);
+  }
 
-    this.yellowTimer = setTimeout(() => {
-      this.systemState.traffic = 'stopped';
-      this.systemState.cyclePhase = 'STOPPED';
-      this.arduino.send('STOP_TRAFFIC');
+  /**
+   * Admin override: cancels any running cycle or timer and sets the phase
+   * immediately. With durationMs the phase shows a countdown and returns to
+   * GREEN when it ends; without it the phase is held until another command.
+   * Broadcasts happen immediately (they bypass the throttle).
+   */
+  forcePhase(phase: SignalPhase, options: ForcePhaseOptions): void {
+    const triggeredBy = options.triggeredBy;
+    const durationMs = options.durationMs;
+    this.clearCycleTimers();
+    this.trafficCycleActive = false;
 
-      const stopSec = Math.floor(this.stopDurationMs / 1000);
-      this.startCountdownForDuration(stopSec);
-      this.maybeBroadcast(Date.now(), false);
-
-      this.stopTimer = setTimeout(() => {
-        this.trafficCycleActive = false;
+    switch (phase) {
+      case 'GREEN': {
         this.systemState.cycleActive = false;
         this.systemState.cyclePhase = 'IDLE';
         this.systemState.cycleRemainingSec = 0;
-        this.systemState.traffic = 'normal';
+        this.setPhase('GREEN', { triggeredBy });
         this.clearCountdown();
         this.arduino.send('NORMAL_TRAFFIC');
-        this.maybeBroadcast(Date.now(), false);
-        this.stopTimer = null;
-      }, this.stopDurationMs);
+        break;
+      }
+      case 'YELLOW': {
+        if (durationMs) {
+          const yellowSec = Math.ceil(durationMs / 1000);
+          this.systemState.cycleActive = true;
+          this.systemState.cyclePhase = 'CAUTION';
+          this.systemState.cycleRemainingSec = yellowSec;
+          this.arduino.send('CAUTION_TRAFFIC');
+          this.setPhase('YELLOW', { triggeredBy, carTimer: yellowSec });
+          this.startCountdownForDuration(yellowSec);
+          this.yellowTimer = setTimeout(() => {
+            this.yellowTimer = null;
+            this.beginRedLeg(this.stopDurationMs, triggeredBy);
+          }, durationMs);
+        } else {
+          this.systemState.cycleActive = false;
+          this.systemState.cyclePhase = 'CAUTION';
+          this.systemState.cycleRemainingSec = 0;
+          this.arduino.send('CAUTION_TRAFFIC');
+          this.setPhase('YELLOW', { triggeredBy });
+        }
+        break;
+      }
+      case 'RED': {
+        if (durationMs) {
+          const stopSec = Math.floor(durationMs / 1000);
+          this.systemState.cycleActive = true;
+          this.systemState.cyclePhase = 'STOPPED';
+          this.systemState.cycleRemainingSec = stopSec;
+          this.arduino.send('STOP_TRAFFIC');
+          this.setPhase('RED', { triggeredBy, carTimer: stopSec, pedTimer: stopSec });
+          this.startCountdownForDuration(stopSec);
+          this.stopTimer = setTimeout(() => {
+            this.stopTimer = null;
+            this.endCycleToGreen(triggeredBy);
+          }, durationMs);
+        } else {
+          this.systemState.cycleActive = false;
+          this.systemState.cyclePhase = 'STOPPED';
+          this.systemState.cycleRemainingSec = 0;
+          this.arduino.send('STOP_TRAFFIC');
+          this.setPhase('RED', { triggeredBy });
+        }
+        break;
+      }
+    }
+
+    this.maybeBroadcast(Date.now(), false);
+  }
+
+  /**
+   * Run a full signal phase sequence on demand (admin test cycle): YELLOW -> RED
+   * -> GREEN using the given durations, with countdowns, like the automatic cycle.
+   */
+  runManualCycle(timers: ManualCycleTimers, triggeredBy: SignalTransitionTrigger): void {
+    this.runSignalSequence(timers.yellowMs, timers.redMs, triggeredBy);
+  }
+
+  /** The current phase (SignalStateEnum values) and when it was entered. */
+  getTrafficPhase(): { phase: SignalPhase; since: Date } {
+    return { phase: this.currentPhase, since: this.currentPhaseSince };
+  }
+
+  /** Whether a signal sequence (cycle or timed forced phase) is currently running. */
+  isCycleActive(): boolean {
+    return this.trafficCycleActive;
+  }
+
+  /** Subscribe to every phase change; the signal machine records events and audit rows from it. */
+  onTransition(listener: (transition: SignalTransition) => void): () => void {
+    this.transitionListeners.add(listener);
+    return () => this.transitionListeners.delete(listener);
+  }
+
+  /** Re-read the YOLO enable toggle (no restart needed) and broadcast the change immediately. */
+  refreshYoloEnabled(): void {
+    if (!isYoloEnabled()) {
+      // Stale positive detections must not survive the disable.
+      this.systemState.yolo = 'offline';
+      this.systemState.camera = 'offline';
+      this.detectionStartedAt = null;
+      this.systemState.detectionDuration = 0;
+      this.systemState.pedestrianDetected = false;
+      this.systemState.pedestrianCount = 0;
+      this.systemState.confidence = 0;
+      this.systemState.detections = [];
+      this.systemState.frameWidth = 0;
+      this.systemState.frameHeight = 0;
+      if (!this.trafficCycleActive) this.systemState.cyclePhase = 'IDLE';
+    }
+    this.maybeBroadcast(Date.now(), false);
+  }
+
+  /** YELLOW -> RED -> GREEN with countdowns; shared by the automatic and manual cycles. */
+  private runSignalSequence(yellowMs: number, redMs: number, triggeredBy: SignalTransitionTrigger): void {
+    this.clearCycleTimers();
+    this.trafficCycleActive = true;
+    this.systemState.cycleActive = true;
+    const yellowSec = Math.ceil(yellowMs / 1000);
+    this.systemState.cyclePhase = 'CAUTION';
+    this.systemState.cycleRemainingSec = yellowSec;
+    this.arduino.send('CAUTION_TRAFFIC');
+    this.setPhase('YELLOW', { triggeredBy, carTimer: yellowSec });
+    this.startCountdownForDuration(yellowSec);
+
+    this.yellowTimer = setTimeout(() => {
       this.yellowTimer = null;
-    }, this.yellowDurationMs);
+      this.beginRedLeg(redMs, triggeredBy);
+    }, yellowMs);
+  }
+
+  /** RED stop leg of a sequence: countdown for the stop duration, then back to GREEN. */
+  private beginRedLeg(redMs: number, triggeredBy: SignalTransitionTrigger): void {
+    const stopSec = Math.floor(redMs / 1000);
+    this.systemState.cyclePhase = 'STOPPED';
+    this.systemState.cycleRemainingSec = stopSec;
+    this.arduino.send('STOP_TRAFFIC');
+    this.setPhase('RED', { triggeredBy, carTimer: stopSec, pedTimer: stopSec });
+    this.startCountdownForDuration(stopSec);
+
+    this.stopTimer = setTimeout(() => {
+      this.stopTimer = null;
+      this.endCycleToGreen(triggeredBy);
+    }, redMs);
+  }
+
+  private endCycleToGreen(triggeredBy: SignalTransitionTrigger): void {
+    this.trafficCycleActive = false;
+    this.systemState.cycleActive = false;
+    this.systemState.cyclePhase = 'IDLE';
+    this.systemState.cycleRemainingSec = 0;
+    this.setPhase('GREEN', { triggeredBy });
+    this.clearCountdown();
+    this.arduino.send('NORMAL_TRAFFIC');
+  }
+
+  /**
+   * Change the phase, notify the transition listeners and broadcast immediately.
+   * Silently skips when the light is already in the requested phase.
+   */
+  private setPhase(
+    phase: SignalPhase,
+    options: { triggeredBy: SignalTransitionTrigger; carTimer?: number | null; pedTimer?: number | null },
+  ): void {
+    if (phase === this.currentPhase) return;
+    this.currentPhase = phase;
+    this.currentPhaseSince = new Date();
+    this.systemState.traffic = phase === 'GREEN' ? 'normal' : phase === 'YELLOW' ? 'caution' : 'stopped';
+    // While the car light is red the pedestrians may cross; any other phase means they wait.
+    this.systemState.pedState = phase === 'RED' ? 'WALK' : 'DONT_WALK';
+    const transition: SignalTransition = {
+      phase,
+      triggeredBy: options.triggeredBy,
+      carTimer: options.carTimer ?? null,
+      pedTimer: options.pedTimer ?? null,
+      pedState: this.systemState.pedState,
+    };
+    for (const listener of this.transitionListeners) {
+      try {
+        listener(transition);
+      } catch (err) {
+        logger.error({ err }, 'Signal transition listener failed');
+      }
+    }
+    this.maybeBroadcast(Date.now(), false);
   }
 
   private clearCycleTimers(): void {
@@ -422,12 +653,6 @@ export class YoloLiveService {
     this.countdownRemaining = 0;
     this.arduino.send('COUNTDOWN:CARS:00' as ArduinoCommand);
     this.arduino.send('COUNTDOWN:PEDS:00' as ArduinoCommand);
-  }
-
-  /** Register where the operating mode and manual timer settings come from (the signal machine). */
-  setSignalStateProvider(provider: SignalRuntimeStateProvider | null): void {
-    this.signalStateProvider = provider;
-    this.refreshSignalState();
   }
 
   /** Re-read mode/manualTimers from the provider and broadcast — used when the signal machine changes them. */
