@@ -5,7 +5,8 @@ import { findById } from '../models/StaffUser.js';
 
 /**
  * Verifies the Bearer access token and attaches the current user to req.user.
- * Loads the user fresh from the DB so role changes and deactivation apply immediately.
+ * Loads the user fresh from the DB so deactivation applies immediately.
+ * Only the single administrator may use the system (see services/auth.service.ts).
  */
 export const authenticate: RequestHandler = async (req, _res, next) => {
   try {
@@ -21,8 +22,8 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
     if (!user) {
       throw ApiError.unauthorized('User no longer exists.');
     }
-    if (!user.is_active) {
-      throw ApiError.forbidden('This account has been disabled.');
+    if (!user.is_active || user.role !== 'admin') {
+      throw ApiError.unauthorized('This account may not use the system.');
     }
 
     req.user = { id: user.id, email: user.email, role: user.role };

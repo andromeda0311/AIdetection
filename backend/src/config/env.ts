@@ -22,6 +22,13 @@ const envSchema = z.object({
 
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
+  // Shared with Netlify (API_PROXY_SECRET there). When set, /api/* only accepts
+  // requests proxied and signed by the website, so the backend cannot be called
+  // directly (which would let callers fake X-Forwarded-For and dodge rate limits).
+  NETLIFY_PROXY_SECRET: z
+    .string()
+    .default('')
+    .refine((value) => value === '' || value.length >= 32, 'NETLIFY_PROXY_SECRET must be at least 32 characters'),
 
   COOKIE_SECURE: z.enum(['true', 'false']).default('false'),
   COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
@@ -91,6 +98,7 @@ const config = {
 
   corsOrigins: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
   trustProxyHops: env.TRUST_PROXY_HOPS,
+  netlifyProxySecret: env.NETLIFY_PROXY_SECRET,
 
   cookie: {
     secure: env.COOKIE_SECURE === 'true',

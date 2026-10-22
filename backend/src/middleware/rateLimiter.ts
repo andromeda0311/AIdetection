@@ -4,10 +4,11 @@ import config from '../config/env.js';
 
 const isDev = config.nodeEnv === 'development';
 
-function createLimiter(options: { windowMs: number; limit: number; message: string }): RequestHandler {
+function createLimiter(options: { windowMs: number; limit: number; message: string; skipSuccessfulRequests?: boolean }): RequestHandler {
   return rateLimit({
     windowMs: options.windowMs,
     limit: options.limit,
+    skipSuccessfulRequests: options.skipSuccessfulRequests ?? false,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { success: false, message: options.message, code: 'RATE_LIMITED' },
@@ -21,18 +22,18 @@ export const apiRateLimiter = createLimiter({
   message: 'Too many requests, please try again later.',
 });
 
-/** Login brute-force protection only — do not apply to refresh/logout. */
+/**
+ * Login brute-force protection — do not apply to refresh/logout.
+ * Counts failed attempts only, per client IP: 5 failures lock that IP out of
+ * login for 15 minutes; a successful login does not use up the allowance.
+ * There is deliberately no per-account lockout: with a single administrator,
+ * an attacker could otherwise lock the only account out from anywhere.
+ */
 export const loginRateLimiter = createLimiter({
   windowMs: 15 * 60 * 1000,
-  limit: isDev ? 100 : 30,
-  message: 'Too many authentication attempts, please try again later.',
-});
-
-/** Registration brute-force protection — separate bucket from login. */
-export const registerRateLimiter = createLimiter({
-  windowMs: 15 * 60 * 1000,
-  limit: isDev ? 50 : 20,
-  message: 'Too many registration attempts, please try again later.',
+  limit: isDev ? 100 : 5,
+  skipSuccessfulRequests: true,
+  message: 'Too many failed login attempts. Try again in 15 minutes.',
 });
 
 /** High-frequency YOLO detection ingest — separate generous bucket. */

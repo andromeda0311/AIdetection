@@ -55,6 +55,6 @@ async function submit() {
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
       <button type="submit" class="auth-submit" :disabled="loading" :aria-busy="loading">{{ loading ? 'Signing in…' : 'Sign In' }}</button>
     </form>
-    <p class="auth-footer">Need an account? <RouterLink to="/register">Create account</RouterLink></p>
+    <p class="auth-footer">Access is restricted to the system administrator. Repeated failed sign-ins are blocked for 15 minutes.</p>
   </section>
 </template>

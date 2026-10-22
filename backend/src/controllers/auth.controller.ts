@@ -4,7 +4,6 @@ import { sendSuccess } from '../utils/response.js';
 import { ApiError } from '../utils/ApiError.js';
 import config from '../config/env.js';
 import { parseDurationMs } from '../utils/time.js';
-import type { RegisterInput } from '../dto/auth.dto.js';
 
 const REFRESH_COOKIE = 'refreshToken';
 
@@ -31,26 +30,6 @@ export async function login(req: Request, res: Response): Promise<Response> {
   res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(parseDurationMs(config.jwt.refreshTtl)));
 
   return sendSuccess(res, 200, 'Login successful.', {
-    user: result.user,
-    accessToken: result.accessToken,
-  });
-}
-
-export async function register(req: Request, res: Response): Promise<Response> {
-  const { firstName, lastName, email, password } = req.body as RegisterInput;
-
-  const result = await authService.register({
-    firstName,
-    lastName,
-    email,
-    password,
-    ipAddress: req.ip,
-    userAgent: req.headers['user-agent'],
-  });
-
-  res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(parseDurationMs(config.jwt.refreshTtl)));
-
-  return sendSuccess(res, 201, 'Account created successfully.', {
     user: result.user,
     accessToken: result.accessToken,
   });

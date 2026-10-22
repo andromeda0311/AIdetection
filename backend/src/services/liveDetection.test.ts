@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { liveDetectionBody } from '../dto/detection.dto.js';
-import { browserReportToPayload } from './liveDetection.js';
+import { StationLock, browserReportToPayload } from './liveDetection.js';
 import { YoloLiveService, type ArduinoCommandSender, type SystemStateBroadcaster } from './yoloLive.service.js';
 
 const box = (x: number, score: number) => ({ x, y: 0.25, width: 0.2, height: 0.5, score });
@@ -14,22 +14,23 @@ function createService() {
 
 describe('liveDetectionBody', () => {
   it('accepts a valid report', () => {
-    expect(liveDetectionBody.safeParse({ count: 2, frameWidth: 640, frameHeight: 360, boxes: [box(0, 0.9), box(0.5, 0.7)] }).success).toBe(true);
-    expect(liveDetectionBody.safeParse({ count: 0, frameWidth: 640, frameHeight: 360, boxes: [] }).success).toBe(true);
+    expect(liveDetectionBody.safeParse({ stationId: 'station-a1', count: 2, frameWidth: 640, frameHeight: 360, boxes: [box(0, 0.9), box(0.5, 0.7)] }).success).toBe(true);
+    expect(liveDetectionBody.safeParse({ stationId: 'station-a1', count: 0, frameWidth: 640, frameHeight: 360, boxes: [] }).success).toBe(true);
   });
 
   it('rejects counts that do not match the boxes, out-of-range values and missing fields', () => {
-    expect(liveDetectionBody.safeParse({ count: 3, frameWidth: 640, frameHeight: 360, boxes: [box(0, 0.9)] }).success).toBe(false);
-    expect(liveDetectionBody.safeParse({ count: 1, frameWidth: 640, frameHeight: 360, boxes: [box(1.5, 0.9)] }).success).toBe(false);
-    expect(liveDetectionBody.safeParse({ count: 1, frameWidth: 640, frameHeight: 360, boxes: [box(0, 2)] }).success).toBe(false);
-    expect(liveDetectionBody.safeParse({ count: -1, frameWidth: 640, frameHeight: 360, boxes: [] }).success).toBe(false);
+    expect(liveDetectionBody.safeParse({ stationId: 'station-a1', count: 3, frameWidth: 640, frameHeight: 360, boxes: [box(0, 0.9)] }).success).toBe(false);
+    expect(liveDetectionBody.safeParse({ stationId: 'station-a1', count: 1, frameWidth: 640, frameHeight: 360, boxes: [box(1.5, 0.9)] }).success).toBe(false);
+    expect(liveDetectionBody.safeParse({ stationId: 'station-a1', count: 1, frameWidth: 640, frameHeight: 360, boxes: [box(0, 2)] }).success).toBe(false);
+    expect(liveDetectionBody.safeParse({ stationId: 'station-a1', count: -1, frameWidth: 640, frameHeight: 360, boxes: [] }).success).toBe(false);
     expect(liveDetectionBody.safeParse({}).success).toBe(false);
+    expect(liveDetectionBody.safeParse({ count: 0, frameWidth: 640, frameHeight: 360, boxes: [] }).success).toBe(false);
   });
 });
 
 describe('browserReportToPayload', () => {
   it('converts normalised boxes to pixels, highest confidence first, using the server clock', () => {
-    const payload = browserReportToPayload({ count: 2, frameWidth: 640, frameHeight: 360, boxes: [box(0.5, 0.6), box(0.1, 0.9)] }, 1234);
+    const payload = browserReportToPayload({ stationId: 'station-a1', count: 2, frameWidth: 640, frameHeight: 360, boxes: [box(0.5, 0.6), box(0.1, 0.9)] }, 1234);
     expect(payload.timestamp).toBe(1234);
     expect(payload.detected).toBe(true);
     expect(payload.count).toBe(2);
@@ -43,7 +44,7 @@ describe('browserReportToPayload', () => {
   });
 
   it('reports nobody in view as not detected', () => {
-    const payload = browserReportToPayload({ count: 0, frameWidth: 640, frameHeight: 360, boxes: [] });
+    const payload = browserReportToPayload({ stationId: 'station-a1', count: 0, frameWidth: 640, frameHeight: 360, boxes: [] });
     expect(payload.detected).toBe(false);
     expect(payload.detections).toEqual([]);
   });
@@ -53,7 +54,7 @@ describe('browser reports drive the traffic-light cycle', () => {
   afterEach(() => vi.useRealTimers());
 
   const report = (count: number) =>
-    browserReportToPayload({ count, frameWidth: 640, frameHeight: 360, boxes: Array.from({ length: count }, (_, i) => box(i * 0.2, 0.8)) });
+    browserReportToPayload({ stationId: 'station-a1', count, frameWidth: 640, frameHeight: 360, boxes: Array.from({ length: count }, (_, i) => box(i * 0.2, 0.8)) });
 
   it('starts the caution phase after a person is reported for the threshold time', () => {
     vi.useFakeTimers();
@@ -88,5 +89,22 @@ describe('browser reports drive the traffic-light cycle', () => {
     expect(commands).not.toContain('CAUTION_TRAFFIC');
     expect(service.getSystemState().detectionDuration).toBe(0);
     service.close();
+  });
+});
+
+describe('StationLock (one monitoring station at a time)', () => {
+  it('lets the first station report and refuses a second one', () => {
+    const lock = new StationLock(5000);
+    expect(lock.claim('station-a', 0)).toBe(true);
+    expect(lock.claim('station-a', 1000)).toBe(true);
+    expect(lock.claim('station-b', 2000)).toBe(false);
+  });
+
+  it('hands over after the first station has been silent for the timeout', () => {
+    const lock = new StationLock(5000);
+    lock.claim('station-a', 0);
+    expect(lock.claim('station-b', 5000)).toBe(false);
+    expect(lock.claim('station-b', 5001)).toBe(true);
+    expect(lock.claim('station-a', 6000)).toBe(false);
   });
 });

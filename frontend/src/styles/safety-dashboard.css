@@ -390,3 +390,4 @@ html.dark .camera-control--stop { background:var(--ops-inset); border-color:var(
   .camera-header-actions { flex-wrap:wrap; justify-content:flex-end; }
   .camera-select { max-width:130px; }
 }
+.camera-station-warning { position:absolute; top:8px; left:8px; right:8px; margin:0; padding:8px 10px; border-radius:6px; background:rgb(180 35 44 / 88%); color:#fff; font-size:11px; font-weight:600; line-height:1.4; }

@@ -14,11 +14,15 @@
 # API calls are proxied so the browser sees them on this site's own origin:
 # the refresh-token cookie stays first-party and no CORS is needed for HTTP calls.
 # Must come before the SPA fallback.
+# Netlify signs every proxied request (x-nf-sign, HS256) with the API_PROXY_SECRET
+# environment variable; the backend only accepts /api calls carrying that signature
+# (NETLIFY_PROXY_SECRET on Render, same value).
 [[redirects]]
   from = "/api/*"
   to = "https://aidetection-zzeg.onrender.com/api/:splat"
   status = 200
   force = true
+  signed = "API_PROXY_SECRET"
 
 # SPA fallback so refreshing /dashboard, /settings, ... loads the app (createWebHistory).
 [[redirects]]
@@ -33,6 +37,13 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     # Only this site may use the camera; microphone and location are never needed.
     Permissions-Policy = "camera=(self), microphone=(), geolocation=()"
+    # Private control panel: never shown in search results, never framed by other sites.
+    X-Robots-Tag = "noindex, nofollow"
+    X-Frame-Options = "DENY"
+    # Scripts only from this site ('wasm-unsafe-eval' lets the detection model's
+    # WebAssembly run; no JavaScript eval). Network only to this site and the backend.
+    # If the backend address changes, update connect-src here and VITE_WS_URL above.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://aidetection-zzeg.onrender.com wss://aidetection-zzeg.onrender.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 # Large detection assets: cache for a day (their names are not content-hashed).
 [[headers]]

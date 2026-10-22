@@ -11,7 +11,7 @@ const detection = inject<WebcamDetection>('webcamDetection')!;
 const reporter = inject<ReturnType<typeof useDetectionReporter>>('detectionReporter')!;
 const cameraStatus = computed(() => detection.status.value === 'monitoring' ? 'online' : detection.status.value === 'error' ? 'error' : detection.status.value === 'idle' ? 'offline' : detection.status.value);
 const cameraLabel = computed(() => detection.devices.value.find((device) => device.deviceId === detection.deviceId.value)?.label ?? 'Not selected');
-const linkStatus = computed(() => reporter.status.value === 'ok' ? 'online' : reporter.status.value === 'error' ? 'error' : 'offline');
+const linkStatus = computed(() => reporter.status.value === 'ok' ? 'online' : reporter.status.value === 'conflict' ? 'another station' : reporter.status.value === 'error' ? 'error' : 'offline');
 const busy = ref(false);
 const error = ref('');
 const lastCheck = ref('Not checked');

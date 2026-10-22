@@ -4,7 +4,6 @@ import { authDisabled } from '../utils/preview';
 
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('../views/LoginView.vue'), meta: { public: true } },
-  { path: '/register', name: 'register', component: () => import('../views/RegisterView.vue'), meta: { public: true } },
   {
     path: '/', component: () => import('../components/AppLayout.vue'), meta: { requiresAuth: true },
     children: [
@@ -27,7 +26,7 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   if (authDisabled) {
-    if (to.name === 'login' || to.name === 'register') return { name: 'dashboard' };
+    if (to.name === 'login') return { name: 'dashboard' };
     return true;
   }
 

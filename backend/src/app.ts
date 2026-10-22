@@ -9,6 +9,7 @@ import { requestLogger } from './middleware/requestLogger.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 import { apiRateLimiterUnlessYoloIngest } from './middleware/rateLimiter.js';
+import { requireSiteProxy } from './middleware/requireSiteProxy.js';
 
 export const app = express();
 
@@ -51,6 +52,7 @@ app.get('/health', async (_req, res) => {
   }
 });
 
+app.use('/api', requireSiteProxy);
 app.use('/api', apiRateLimiterUnlessYoloIngest);
 app.use('/api', routes);
 

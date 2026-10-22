@@ -16,6 +16,8 @@ export const listDetectionsQuery = z.object({
 /** Live person detections reported by a logged-in dashboard (browser webcam). Boxes are 0..1 of the frame. */
 export const liveDetectionBody = z
   .object({
+    /** Random ID of the reporting browser tab; only one station may feed the lights at a time. */
+    stationId: z.string().min(8).max(64),
     count: z.number().int().min(0).max(200),
     frameWidth: z.number().int().min(0).max(10_000),
     frameHeight: z.number().int().min(0).max(10_000),

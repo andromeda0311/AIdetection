@@ -2,6 +2,8 @@ import { api } from './client';
 import type { PersonBox } from '@/utils/personDetector';
 
 export interface LiveDetectionReport {
+  /** Identifies this browser tab; the server lets only one station feed the lights. */
+  stationId: string;
   count: number;
   frameWidth: number;
   frameHeight: number;

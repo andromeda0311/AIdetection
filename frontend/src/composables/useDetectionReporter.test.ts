@@ -98,4 +98,26 @@ describe('useDetectionReporter', () => {
     expect(failing.reporter.lastError.value).toBe('Network Error');
     failing.scope.stop();
   });
+
+  it('sends a stable station ID and reports when another station holds the lights', async () => {
+    const { running, sent, scope } = setup();
+    running.value = true;
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(2100);
+    const ids = new Set(sent.map((report) => report.stationId));
+    expect(ids.size).toBe(1);
+    expect([...ids][0]).toMatch(/.{8,}/);
+    scope.stop();
+
+    const boxes = shallowRef<PersonBox[]>([]);
+    const count = computed(() => boxes.value.length);
+    const conflictScope = effectScope();
+    const reporter = conflictScope.run(() => useDetectionReporter({ count, boxes, frameSize: ref({ width: 640, height: 360 }) }, {
+      send: async () => { throw Object.assign(new Error('Request failed with status code 409'), { response: { status: 409 } }); },
+    }))!;
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(reporter.status.value).toBe('conflict');
+    expect(reporter.lastError.value).toMatch(/Another computer is already monitoring/);
+    conflictScope.stop();
+  });
 });

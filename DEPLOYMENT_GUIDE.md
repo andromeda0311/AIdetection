@@ -229,6 +229,7 @@ Environment variables (Render → Environment):
 | `COOKIE_SECURE` | `true` |
 | `COOKIE_SAMESITE` | `lax` |
 | `TRUST_PROXY_HOPS` | `2` (verify per Phase 1) |
+| `NETLIFY_PROXY_SECRET` | 32+ random characters; same value as `API_PROXY_SECRET` on Netlify (fix Phase 0). Set it after the site deploys with signing |
 | `SIGNAL_TRANSPORT` | `log` |
 | `YOLO_LIVE_ARDUINO_TRANSPORT` | `log` |
 | `DETECTION_MOCK` | `true` |
@@ -326,7 +327,7 @@ Camera and detection:
 Accounts and server:
 
 - [ ] Admin login, logout, and staying logged in after a page refresh and after 15+ minutes (access token renewal).
-- [ ] Staff management and audit logs work for admins and are blocked for non-admins.
+- [ ] Only the administrator can log in; audit logs work for the administrator.
 - [ ] Socket.IO connects (no CORS errors in the console) and rejects connections without a token.
 - [ ] Unauthenticated `POST /api/yolo/toggle` is rejected.
 - [ ] Rate limiting applies per visitor, not to everyone at once.

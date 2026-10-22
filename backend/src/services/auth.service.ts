@@ -1,13 +1,4 @@
-import {
-  createUser,
-  findByEmail,
-  findById,
-  listUsers,
-  toSafeStaffUser,
-  updateUser,
-  type SafeStaffUser,
-  type UpdateStaffData,
-} from '../models/StaffUser.js';
+import { findByEmail, findById, toSafeStaffUser, type SafeStaffUser, type StaffUserRecord } from '../models/StaffUser.js';
 import {
   createRefreshToken,
   findByTokenHash,
@@ -23,19 +14,16 @@ import {
 } from './token.service.js';
 import { hashPassword, verifyPassword } from './password.service.js';
 import { ApiError } from '../utils/ApiError.js';
-import type { CreateStaffInput, UpdateStaffInput } from '../dto/staff.dto.js';
 import type { Role } from '../types/authUser.js';
 
-export interface LoginParams {
-  email: string;
-  password: string;
-  ipAddress?: string;
-  userAgent?: string;
-}
+/*
+ * Access model: the system has exactly one account, the administrator (created by
+ * `npm run db:seed:prod`). There is no self-registration and no staff management.
+ * Accounts with any other role (e.g. registered before registration was removed)
+ * can neither log in nor refresh a session.
+ */
 
-export interface RegisterParams {
-  firstName: string;
-  lastName: string;
+export interface LoginParams {
   email: string;
   password: string;
   ipAddress?: string;
@@ -48,53 +36,34 @@ export interface AuthResult {
   refreshToken: string;
 }
 
-export async function login(params: LoginParams): Promise<AuthResult> {
-  const user = await findByEmail(params.email);
+const INVALID_CREDENTIALS = 'Invalid email or password.';
 
-  const valid = user ? await verifyPassword(params.password, user.password_hash) : false;
-  if (!user || !valid) {
-    throw ApiError.unauthorized('Invalid email or password.');
-  }
-
-  if (!user.is_active) {
-    throw ApiError.forbidden('This account has been disabled.');
-  }
-
-  const refreshToken = signRefreshToken(user.id);
-  await createRefreshToken({
-    userId: user.id,
-    tokenHash: hashToken(refreshToken),
-    expiresAt: refreshTokenExpiry(),
-    ipAddress: params.ipAddress,
-    userAgent: params.userAgent,
-  });
-
-  return {
-    user: toSafeStaffUser(user),
-    accessToken: signAccessToken({ id: user.id, email: user.email, role: user.role }),
-    refreshToken,
-  };
+export function isAdminRole(role: Role): boolean {
+  return role === 'admin';
 }
 
-/**
- * Public self-registration. Role is always forced to 'staff' —
- * admin accounts must be created through the admin panel or seed script.
- */
-export async function register(params: RegisterParams): Promise<AuthResult> {
-  const email = params.email.toLowerCase().trim();
-  const existing = await findByEmail(email);
-  if (existing) {
-    throw ApiError.conflict('EMAIL_TAKEN', 'An account with this email already exists.');
-  }
+// Compared against when the email is unknown, so a wrong email takes as long as a
+// wrong password and response timing does not reveal which accounts exist.
+let dummyHash: Promise<string> | null = null;
+function getDummyHash(): Promise<string> {
+  dummyHash ??= hashPassword('dummy-password-for-constant-time-login');
+  return dummyHash;
+}
 
-  const passwordHash = await hashPassword(params.password);
-  const user = await createUser({
-    email,
-    passwordHash,
-    firstName: params.firstName,
-    lastName: params.lastName,
-    role: 'staff',
-  });
+/** True only for an active administrator. */
+function mayUseSystem(user: StaffUserRecord): boolean {
+  return user.is_active && isAdminRole(user.role);
+}
+
+export async function login(params: LoginParams): Promise<AuthResult> {
+  const user = await findByEmail(params.email);
+  const valid = await verifyPassword(params.password, user ? user.password_hash : await getDummyHash());
+
+  // Same message for unknown email, wrong password, disabled or non-admin account:
+  // the response never confirms that an account exists.
+  if (!user || !valid || !mayUseSystem(user)) {
+    throw ApiError.unauthorized(INVALID_CREDENTIALS);
+  }
 
   const refreshToken = signRefreshToken(user.id);
   await createRefreshToken({
@@ -124,11 +93,9 @@ export async function refresh(refreshToken: string): Promise<AuthResult> {
   }
 
   const user = await findById(record.user_id);
-  if (!user) {
-    throw ApiError.unauthorized('User no longer exists.');
-  }
-  if (!user.is_active) {
-    throw ApiError.forbidden('This account has been disabled.');
+  if (!user || !mayUseSystem(user)) {
+    await revokeAllForUser(record.user_id);
+    throw ApiError.unauthorized('Session is no longer valid. Please log in again.');
   }
 
   // Rotation: revoke the used token and issue a fresh one.
@@ -153,58 +120,4 @@ export async function logout(refreshToken: string): Promise<void> {
   if (record && !record.revoked_at) {
     await revokeById(record.id);
   }
-}
-
-export async function listStaff(): Promise<SafeStaffUser[]> {
-  const users = await listUsers();
-  return users.map(toSafeStaffUser);
-}
-
-export async function createStaff(input: CreateStaffInput): Promise<SafeStaffUser> {
-  const email = input.email.toLowerCase().trim();
-  const existing = await findByEmail(email);
-  if (existing) {
-    throw ApiError.conflict('EMAIL_TAKEN', 'A staff account with this email already exists.');
-  }
-
-  const passwordHash = await hashPassword(input.password);
-  const user = await createUser({
-    email,
-    passwordHash,
-    firstName: input.firstName,
-    lastName: input.lastName,
-    role: input.role,
-  });
-
-  return toSafeStaffUser(user);
-}
-
-export async function updateStaff(id: string, input: UpdateStaffInput): Promise<SafeStaffUser> {
-  const existing = await findById(id);
-  if (!existing) {
-    throw ApiError.notFound('Staff account not found.');
-  }
-
-  const data: UpdateStaffData = {
-    firstName: input.firstName,
-    lastName: input.lastName,
-    role: input.role,
-    isActive: input.isActive,
-  };
-
-  const updated = await updateUser(id, data);
-  return toSafeStaffUser(updated ?? existing);
-}
-
-export async function deactivateStaff(id: string): Promise<void> {
-  const existing = await findById(id);
-  if (!existing) {
-    throw ApiError.notFound('Staff account not found.');
-  }
-
-  await updateUser(id, { isActive: false });
-}
-
-export function isAdminRole(role: Role): boolean {
-  return role === 'admin';
 }

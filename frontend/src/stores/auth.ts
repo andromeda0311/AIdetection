@@ -34,25 +34,6 @@ export const useAuthStore = defineStore('auth', {
       this.ready = true;
     },
 
-    async register(
-      firstName: string,
-      lastName: string,
-      email: string,
-      password: string,
-      confirmPassword: string,
-    ): Promise<void> {
-      const response = await api.post<{ data: LoginResult }>('/auth/register', {
-        firstName,
-        lastName,
-        email,
-        password,
-        confirmPassword,
-      });
-      this.user = response.data.data.user;
-      this.accessToken = response.data.data.accessToken;
-      this.ready = true;
-    },
-
     async refresh(): Promise<boolean> {
       if (authDisabled) {
         this.ready = true;

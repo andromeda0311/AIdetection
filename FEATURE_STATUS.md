@@ -6,7 +6,7 @@ These are **fix phases**, separate from the hosting phases in [DEPLOYMENT_GUIDE.
 
 | Phase | Goal | Alert | Effort |
 | --- | --- | --- | --- |
-| [0](#phase-0-security--high-alert) | Close security holes on the live site | 🔴 High alert | Medium |
+| [0](#phase-0-security--high-alert) | Close security holes on the live site | 🔴 High alert → code done, deploy pending | Medium |
 | [1](#phase-1-show-the-real-signal-state) | Dashboard shows the real pedestrian light, countdowns and mode | Feature | Medium |
 | [2](#phase-2-one-traffic-light-engine) | Manual controls, automatic cycle and audit log work together | Feature | Medium–large |
 | [3](#phase-3-settings-that-change-the-system) | Timing settings actually change the lights | Feature | Small–medium |
@@ -21,6 +21,40 @@ Severity in Phase 0: 🔴 critical · 🟠 high · 🟡 medium · 🟢 low.
 
 The live site is public. Until this phase is done, do not hand it to the client or connect an Arduino.
 
+**Decision (23 October 2026): the system has exactly one account, the administrator.** Registration and staff management are removed instead of adding a Staff page (0.5).
+
+### Status (23 October 2026)
+
+Code for 0.4–0.11 is done and tested; it goes live once the two proxy secrets are set (see 0.12 in the table and the deployment steps). 0.1–0.3 are owner actions.
+
+| # | Result |
+| --- | --- |
+| 0.4 | `/register`, its page, link and API removed (`POST /api/auth/register` → 404). |
+| 0.5 | Replaced by the single-admin rule: only an **active admin** can log in, refresh a session, call any API or open Socket.IO. Other accounts get the same "Invalid email or password." as a wrong password. `db:seed:prod` deactivates every other account and revokes their sessions; the admin password must be 12+ characters with a letter and a number. Staff API removed. |
+| 0.6 | Feeding the lights needs the admin login, and only **one monitoring station** at a time: a second computer gets 409 and the dashboard warns "Another computer is already monitoring". The holder keeps control until it has been silent for 5 s. |
+| 0.7 | Video upload is not registered in production (404). |
+| 0.8 | `npm audit fix` in `frontend/` (axios 1.20.0, vue 3.5.44): 0 runtime vulnerabilities in both apps. |
+| 0.9 | `/api/system/status`, `/api/yolo/status`, `/api/arduino/status` require login; `/api/health` and `/health` stay public. |
+| 0.10 | CSP, `X-Frame-Options: DENY`, `X-Robots-Tag: noindex` and `robots.txt` added. |
+| 0.11 | Login: 5 failed attempts per IP per 15 minutes (successful logins do not count), constant-time answer for unknown emails, 128-character password cap. No per-account lockout on purpose: with one admin it would let anyone lock the only account out. |
+| **New** | **Rate-limit bypass found and fixed.** Calling Render directly with a forged `X-Forwarded-For` header gave unlimited login attempts. Now Netlify signs every proxied `/api` request (`signed = "API_PROXY_SECRET"`, HS256 `x-nf-sign`) and the backend refuses unsigned or wrongly signed calls (403) when `NETLIFY_PROXY_SECRET` is set. |
+
+**Tests.** Backend 47/47 and frontend 22/22 unit tests. Attack tests against a local copy of production (production-mode backend, temporary PostgreSQL, a Netlify stand-in applying the real `netlify.toml` headers and signing), all passed:
+
+| Attack | Result |
+| --- | --- |
+| Call the backend directly: unsigned, forged secret, `alg: none` | 403 ×3 (`/api/health`, `/health` still 200) |
+| Register; list staff | 404, 404 |
+| Log in as an active non-admin, a disabled admin, an unknown email | 401 with the identical message |
+| Use a validly signed token of the non-admin account (stolen/old) on the API and Socket.IO | 401 / rejected |
+| Read live status without login | 401 |
+| 500-character password | 422 |
+| Upload a video as admin | 404 |
+| Second station / report without station ID | 409 / 422 |
+| 5 wrong passwords, then forged `X-Forwarded-For`, then the right password | 429 throughout, `Retry-After` ≈ 15 min |
+| Seed with a weak password / with two pre-existing extra accounts | refused / both deactivated |
+| Browser under the real CSP: login, live updates, camera, model (WebAssembly), detection | all work, **0 CSP violations** |
+
 ### Do today (no code needed)
 
 | # | Sev. | Action | Who |
@@ -34,7 +68,7 @@ The live site is public. Until this phase is done, do not hand it to the client 
 | # | Sev. | Problem | Fix | Where |
 | --- | --- | --- | --- | --- |
 | 0.4 | 🔴 | **Anyone can create an account.** `/register` creates an *active* `staff` account and logs it in immediately. Since any logged-in user can send detection reports, a stranger can fake pedestrians and start the traffic-light cycle (logged only today; real lights once an Arduino is connected). | Remove public registration (route, page, link), **or** create self-registered accounts inactive until an admin approves them. | `backend/src/routes/auth.routes.ts`, `services/auth.service.ts` (`register`), `frontend/src/views/RegisterView.vue`, `components/auth/SignUpForm.vue`, router, login page link |
-| 0.5 | 🔴 | **No way to remove or approve accounts.** The staff API exists (admin-only) but there is no page. | Add an admin **Staff** page: list, create, change role, deactivate (and approve, if 0.4 uses approval). | New view; API in `frontend/src/api/index.ts` (`listStaff`, `createStaff`, `updateStaff`, `deactivateStaff`) |
+| 0.5 | 🔴 | **No way to remove or approve accounts.** The staff API exists (admin-only) but there is no page. | ~~Staff page~~ → decided: single admin only; non-admin accounts cannot use the system and are deactivated by the seed. | `services/auth.service.ts`, `middleware/authenticate.ts`, `services/socketAuth.ts`, `db/seed.ts` |
 | 0.6 | 🟠 | **Every staff account can drive the traffic lights.** `POST /api/live/detection` accepts any logged-in user, and several browsers can report at once. | Allow only administrators or a dedicated monitoring role to report, and accept one monitoring station at a time (reject or flag a second one). | `backend/src/routes/yolo.routes.ts`, `controllers/yolo.controller.ts`, `frontend/src/components/AppLayout.vue` (reporter `enabled`) |
 | 0.7 | 🟠 | **Video upload open to all staff.** Up to 200 MB per file, saved on Render's small, temporary disk, and it returns **simulated** results (`DETECTION_MOCK=true`). A user can fill the disk or exhaust memory. | Disable `/api/detections/upload` in production until the feature is decided (Phase 5), or make it admin-only with a small limit (`UPLOAD_MAX_FILE_SIZE_MB`). | `backend/src/routes/detection.routes.ts` |
 | 0.8 | 🟠 | **Vulnerable libraries in the website.** `axios` (prototype pollution, credential header exposure through `follow-redirects`), `vue` (server-renderer XSS; not used by this client-only app but flagged), `source-map-js` (build). | `npm audit fix` in `frontend/`, rebuild, run the tests, redeploy. Target: `npm audit --omit=dev` reports 0. | `frontend/package-lock.json` |
@@ -42,6 +76,7 @@ The live site is public. Until this phase is done, do not hand it to the client 
 | 0.10 | 🟡 | **No Content-Security-Policy** on the website, so an injected script would run unrestricted. | Add a CSP in `frontend/netlify.toml`: `default-src 'self'`; `connect-src 'self' https://aidetection-zzeg.onrender.com wss://aidetection-zzeg.onrender.com`; `script-src 'self' 'wasm-unsafe-eval'`; `media-src 'self' blob:`; `img-src 'self' data: blob:`; `style-src 'self' 'unsafe-inline'`; `frame-ancestors 'none'`. Then test login, live updates, camera and model loading. | `frontend/netlify.toml` |
 | 0.11 | 🟢 | **Password guessing** is limited per IP only (30 tries per 15 min). Admin-created passwords need only 8 characters, while registration also requires a letter and a number. | Add a per-account lockout or delay after repeated failures; use one password rule everywhere. | `middleware/rateLimiter.ts`, `services/auth.service.ts`, `dto/staff.dto.ts` |
 | 0.12 | 🟢 | Remaining `npm audit` findings in backend **build tools** (not shipped to the live server). | Update when convenient. | `backend/package.json` dev dependencies |
+| 0.13 | 🟠 | **(Found during testing)** Direct calls to Render could forge `X-Forwarded-For` and skip the login rate limit. | Netlify signs proxied requests; backend requires the signature. Needs `API_PROXY_SECRET` on Netlify and the same value as `NETLIFY_PROXY_SECRET` on Render. | `frontend/netlify.toml`, `backend/src/middleware/requireSiteProxy.ts` |
 
 ### Already verified secure (no action)
 
@@ -56,13 +91,14 @@ The live site is public. Until this phase is done, do not hand it to the client 
 
 ### Done when
 
-- [ ] `/register` is gone or creates inactive accounts; no unknown active accounts in `staff_users`.
-- [ ] An admin can list, create and deactivate staff from a page.
-- [ ] A normal staff account gets 403 on `POST /api/live/detection`; a second monitoring station is refused.
-- [ ] Upload returns 403/404 in production (or admin-only with a small limit).
-- [ ] `npm audit --omit=dev` reports 0 in both `frontend/` and `backend/`.
-- [ ] The three status endpoints return 401 without login; `/api/health` stays 200.
-- [ ] CSP header present; login, live updates, camera and model still work on the live site.
+- [x] `/register` is gone. *(Owner: confirm no unknown active accounts in `staff_users`, or re-run `db:seed:prod`, which deactivates them.)*
+- [x] ~~An admin can manage staff from a page~~ → only the single admin can use the system.
+- [x] A non-admin account cannot report detections or use the API at all; a second monitoring station is refused.
+- [x] Upload returns 404 in production.
+- [x] `npm audit --omit=dev` reports 0 in both `frontend/` and `backend/`.
+- [x] The three status endpoints return 401 without login; `/api/health` stays 200.
+- [x] CSP header present; login, live updates, camera and model work under it (local production copy).
+- [ ] Deployed with both proxy secrets set, and the attack tests repeated against the live site.
 
 ---
 

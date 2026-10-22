@@ -2,7 +2,7 @@ import { onScopeDispose, ref, watch, type Ref, type ShallowRef } from 'vue';
 import { postLiveDetection, type LiveDetectionReport } from '@/api/liveDetection';
 import type { PersonBox } from '@/utils/personDetector';
 
-export type ReportStatus = 'idle' | 'ok' | 'error';
+export type ReportStatus = 'idle' | 'ok' | 'error' | 'conflict';
 
 /** The parts of useWebcamDetection the reporter reads. */
 export interface DetectionSource {
@@ -32,6 +32,8 @@ export function useDetectionReporter(source: DetectionSource, options: Detection
   const minGapMs = options.minGapMs ?? 250;
   const send = options.send ?? postLiveDetection;
 
+  // Random per tab, so a second tab or computer is recognised as another station.
+  const stationId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `station-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
   const status = ref<ReportStatus>('idle');
   const lastSentAt = ref(0);
   const lastError = ref<string | null>(null);
@@ -43,7 +45,7 @@ export function useDetectionReporter(source: DetectionSource, options: Detection
   function buildReport(): LiveDetectionReport | null {
     const count = source.count.value;
     if (count === null) return null;
-    return { count, frameWidth: source.frameSize.value.width, frameHeight: source.frameSize.value.height, boxes: source.boxes.value };
+    return { stationId, count, frameWidth: source.frameSize.value.width, frameHeight: source.frameSize.value.height, boxes: source.boxes.value };
   }
 
   async function flush(): Promise<void> {
@@ -67,8 +69,11 @@ export function useDetectionReporter(source: DetectionSource, options: Detection
       status.value = 'ok';
       lastError.value = null;
     } catch (err) {
-      status.value = 'error';
-      lastError.value = err instanceof Error ? err.message : 'Report failed';
+      const httpStatus = (err as { response?: { status?: number } })?.response?.status;
+      status.value = httpStatus === 409 ? 'conflict' : 'error';
+      lastError.value = httpStatus === 409
+        ? 'Another computer is already monitoring. This one is not controlling the traffic lights.'
+        : err instanceof Error ? err.message : 'Report failed';
     } finally {
       inFlight = false;
       if (pending) {
@@ -95,5 +100,5 @@ export function useDetectionReporter(source: DetectionSource, options: Detection
     if (gapTimer) clearTimeout(gapTimer);
   });
 
-  return { status, lastSentAt, lastError };
+  return { stationId, status, lastSentAt, lastError };
 }

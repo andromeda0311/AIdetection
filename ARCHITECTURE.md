@@ -168,8 +168,7 @@ interface SystemState {
 | GET | `/api/yolo/status` | YOLO live state |
 | GET | `/api/arduino/status` | Arduino connection state |
 | GET | `/api/system/status` | Full system state |
-| GET/POST | `/api/auth/*` | JWT auth (login, refresh) |
-| GET/POST | `/api/staff/*` | Staff management (admin) |
+| GET/POST | `/api/auth/*` | JWT auth (login, refresh, logout). Single administrator account; no registration |
 | GET/POST | `/api/detections/*` | Upload-based video detection |
 | GET/POST | `/api/signal/*` | Legacy traffic signal control |
 
@@ -207,7 +206,6 @@ interface SystemState {
 - `src/components/dashboard/EventLogCard.vue` — Signal event log
 - `src/views/DetectionsView.vue` — Upload video for detection
 - `src/views/DetectionDetailView.vue` — Annotated video + frames
-- `src/views/StaffView.vue` — Admin staff management
 - `src/api/*.ts` — Typed API clients (REST + WebSocket URLs from env)
 
 **Live System State Composables (`useLiveSystemState.ts`):**

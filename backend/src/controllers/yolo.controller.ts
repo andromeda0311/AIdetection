@@ -3,7 +3,8 @@ import { yoloLive } from '../services/yoloLive.instance.js';
 import { sendSuccess } from '../utils/response.js';
 import type { YoloDetectionPayload } from '../services/yoloLive.service.js';
 import type { LiveDetectionBody } from '../dto/detection.dto.js';
-import { browserReportToPayload } from '../services/liveDetection.js';
+import { browserReportToPayload, monitoringStation } from '../services/liveDetection.js';
+import { ApiError } from '../utils/ApiError.js';
 
 export async function postYoloDetection(req: Request, res: Response): Promise<void> {
   yoloLive.handleDetection(req.body as YoloDetectionPayload);
@@ -12,7 +13,11 @@ export async function postYoloDetection(req: Request, res: Response): Promise<vo
 
 /** Live detections from a logged-in dashboard's browser webcam (replaces the Python feed). */
 export async function postBrowserDetection(req: Request, res: Response): Promise<void> {
-  yoloLive.handleDetection(browserReportToPayload(req.body as LiveDetectionBody));
+  const body = req.body as LiveDetectionBody;
+  if (!monitoringStation.claim(body.stationId)) {
+    throw ApiError.conflict('STATION_CONFLICT', 'Another computer is already monitoring. Only one station can control the traffic lights.');
+  }
+  yoloLive.handleDetection(browserReportToPayload(body));
   res.sendStatus(204);
 }
 

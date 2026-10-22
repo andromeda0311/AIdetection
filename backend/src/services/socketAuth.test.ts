@@ -43,18 +43,21 @@ describe('socketAuth', () => {
     expect(next.mock.calls[0]?.[0]).toBeInstanceOf(Error);
   });
 
-  it('middleware attaches the user and only admins pass the admin check', async () => {
+  it('refuses any account that is not the administrator', async () => {
     findById.mockResolvedValue({ ...staff, is_active: true });
-    const staffSocket = fakeSocket(signAccessToken(staff));
+    await expect(authenticateSocketToken(signAccessToken(staff))).rejects.toThrow(/may not use the system/);
     const next = vi.fn();
-    await socketAuthMiddleware(staffSocket, next);
-    expect(next).toHaveBeenCalledWith();
-    expect(staffSocket.data.user).toEqual(staff);
-    expect(isAdminSocket(staffSocket)).toBe(false);
+    await socketAuthMiddleware(fakeSocket(signAccessToken(staff)), next);
+    expect(next.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  });
 
+  it('middleware attaches the administrator', async () => {
     findById.mockResolvedValue({ ...admin, is_active: true });
     const adminSocket = fakeSocket(signAccessToken(admin));
-    await socketAuthMiddleware(adminSocket, vi.fn());
+    const next = vi.fn();
+    await socketAuthMiddleware(adminSocket, next);
+    expect(next).toHaveBeenCalledWith();
+    expect(adminSocket.data.user).toEqual(admin);
     expect(isAdminSocket(adminSocket)).toBe(true);
   });
 });

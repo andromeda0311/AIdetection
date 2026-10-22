@@ -2,10 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import SafetyIcon from './SafetyIcon.vue';
 import { drawPersonBoxes } from '@/utils/detectionOverlay';
+import { inject } from 'vue';
 import type { WebcamDetection } from '@/composables/useWebcamDetection';
+import type { useDetectionReporter } from '@/composables/useDetectionReporter';
 const props = defineProps<{ detection: WebcamDetection; preview: boolean }>();
 const { status, error, devices, deviceId, boxes, frameSize, count, active, detectionsPerSecond, stream } = props.detection;
 
+const reporter = inject<ReturnType<typeof useDetectionReporter> | null>('detectionReporter', null);
+const otherStation = computed(() => reporter?.status.value === 'conflict');
 const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const showSample = computed(() => props.preview && status.value === 'idle');
@@ -67,6 +71,7 @@ function onSelectDevice(event: Event) { void props.detection.selectDevice((event
       <canvas v-show="live" ref="canvasEl" class="detection-overlay" aria-hidden="true" />
       <div v-if="!showSample && status !== 'monitoring'" class="camera-unavailable" :class="{ 'camera-unavailable--error': status === 'error' }" :role="status === 'error' ? 'alert' : 'status'"><SafetyIcon name="video" /><span>{{ overlayMessage }}</span></div>
       <span v-if="showSample" class="sample-camera-label">Sample camera visualization</span>
+      <p v-if="otherStation && live" class="camera-station-warning" role="alert">Another computer is already monitoring. This one is not controlling the traffic lights.</p>
       <div class="camera-detection-bar"><SafetyIcon name="walk" /><span>{{ barText }}</span><span v-if="detected" class="detection-indicator" /></div>
     </div></div>
   </section>

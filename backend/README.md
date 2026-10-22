@@ -72,20 +72,15 @@ Base URL: `http://localhost:4000/api`
 | POST   | `/auth/logout`    | No           | Revoke refresh token (cookie)     |
 | GET    | `/auth/me`        | Yes          | Current authenticated user        |
 
-### Staff management (admin only)
+### Access model
 
-| Method | Endpoint        | Description                              |
-| ------ | --------------- | ---------------------------------------- |
-| GET    | `/staff`        | List all staff accounts                  |
-| POST   | `/staff`        | Create a staff account                   |
-| PATCH  | `/staff/:id`    | Update role / name / active status       |
-| DELETE | `/staff/:id`    | Deactivate a staff account               |
+There is exactly one account: the administrator created by `npm run db:seed:prod` (`ADMIN_EMAIL`, `ADMIN_PASSWORD` of 12+ characters with a letter and a number). Seeding deactivates every other account. There is no registration or staff management; only an active admin can log in, refresh a session, call the API or open a Socket.IO connection. Login allows 5 failed attempts per IP per 15 minutes. With `NETLIFY_PROXY_SECRET` set, `/api/*` (except `/api/health`) only accepts requests signed by the website's Netlify proxy.
 
 ### Detections (staff)
 
 | Method | Endpoint                             | Description                                  |
 | ------ | ------------------------------------ | -------------------------------------------- |
-| POST   | `/detections/upload`                 | Upload a video (multipart field `file`); starts async detection (202) |
+| POST   | `/detections/upload`                 | Upload a video (multipart field `file`); starts async detection (202). Not available when `NODE_ENV=production` |
 | GET    | `/detections`                        | List detections (`?page=1&limit=20`)         |
 | GET    | `/detections/:id`                    | Detection detail incl. detected frames       |
 | GET    | `/detections/:id/input/file`         | Download the original uploaded video         |

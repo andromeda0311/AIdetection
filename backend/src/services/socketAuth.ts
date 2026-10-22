@@ -19,8 +19,8 @@ export async function authenticateSocketToken(token: unknown): Promise<AuthUser>
   if (!user) {
     throw ApiError.unauthorized('User no longer exists.');
   }
-  if (!user.is_active) {
-    throw ApiError.forbidden('This account has been disabled.');
+  if (!user.is_active || user.role !== 'admin') {
+    throw ApiError.unauthorized('This account may not use the system.');
   }
 
   return { id: user.id, email: user.email, role: user.role };

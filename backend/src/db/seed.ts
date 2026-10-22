@@ -3,7 +3,14 @@ import config from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { hashPassword } from '../services/password.service.js';
 import { StaffUser, RoleEnum } from '../entities/StaffUser.js';
+import { RefreshToken } from '../entities/RefreshToken.js';
+import { IsNull, Not } from 'typeorm';
+import { adminPasswordProblem } from '../services/adminPolicy.js';
 
+/**
+ * Creates or resets THE administrator. The system has exactly one account, so
+ * every other account is deactivated and its sessions are revoked.
+ */
 async function seed(): Promise<void> {
   const { email, password } = config.admin;
 
@@ -13,8 +20,9 @@ async function seed(): Promise<void> {
     return;
   }
 
-  if (password.length < 8) {
-    logger.error('ADMIN_PASSWORD must be at least 8 characters long.');
+  const problem = adminPasswordProblem(password);
+  if (problem) {
+    logger.error(problem);
     process.exitCode = 1;
     return;
   }
@@ -43,6 +51,17 @@ async function seed(): Promise<void> {
     });
     await repo.save(entity);
     logger.info({ email: normalizedEmail }, 'Admin user created.');
+  }
+
+  // Single-admin rule: no other account may stay usable.
+  const others = await repo.find({ where: { email: Not(normalizedEmail) } });
+  if (others.length) {
+    const ids = others.map((user) => user.id);
+    await repo.update(ids, { isActive: false });
+    for (const id of ids) {
+      await AppDataSource.getRepository(RefreshToken).update({ userId: id, revokedAt: IsNull() }, { revokedAt: new Date() });
+    }
+    logger.warn({ deactivated: others.map((user) => user.email) }, 'Other accounts deactivated (single administrator).');
   }
 }
 
