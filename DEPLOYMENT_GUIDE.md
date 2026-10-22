@@ -193,6 +193,10 @@ Known issue found (pre-existing, not changed): the live cycle never sets `pedSta
 
 **Done when:** Neon's table view shows the tables from `backend/src/migrations/` plus the `migrations` table, and the admin row exists.
 
+Notes from running it: copy the plain `postgresql://...` string (Connect → "Connection string"), not the `psql '...'` command or the `.env` line; otherwise the host is parsed wrongly (`ENOTFOUND base`). `pg` prints a harmless notice about `sslmode=require`; use `sslmode=verify-full` in the URL to make full certificate checking explicit and silence it.
+
+**Status (23 October 2026): done.** Migrations ran and the administrator account was created on Neon.
+
 ---
 
 ## Phase 5: Deploy the backend on Render
@@ -207,7 +211,7 @@ Render → **New → Web Service** → connect `jed-bot/group11`.
 | Build command | `npm ci --include=dev && npm run build` |
 | Start command | `node dist/server.js` |
 | Instance type | Free |
-| Health check path | `/health` |
+| Health check path | `/api/health` (not `/health`: that queries the database, and Render's frequent checks would keep Neon from ever suspending) |
 
 `--include=dev` is needed because TypeScript is a dev dependency and Render sets `NODE_ENV=production` during the build.
 
@@ -217,7 +221,7 @@ Environment variables (Render → Environment):
 | --- | --- |
 | `NODE_ENV` | `production` |
 | `NODE_VERSION` | `22` |
-| `DATABASE_URL` | Neon pooled connection string |
+| `DATABASE_URL` | Neon **pooled** connection string (host contains `-pooler`), with `sslmode=verify-full` |
 | `DB_SSL` | `true` |
 | `JWT_ACCESS_SECRET` | new `openssl rand -hex 48` |
 | `JWT_REFRESH_SECRET` | another, different `openssl rand -hex 48` |
