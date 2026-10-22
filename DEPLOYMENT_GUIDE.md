@@ -309,6 +309,8 @@ Notes from deploying: `VITE_WS_URL` is set in `frontend/netlify.toml`, so no Net
 
 ## Phase 8: Production acceptance checks
 
+Before acceptance, resolve the P0 and P1 items in [FEATURE_STATUS.md](FEATURE_STATUS.md): public registration is open, and several dashboard values (pedestrian WALK, car countdown, System Adjustments, controller status) are not connected.
+
 Run these on the deployed URL, on the laptop and webcam that will actually be used.
 
 Camera and detection:
