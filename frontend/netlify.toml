@@ -1,0 +1,46 @@
+# Netlify site config. In the Netlify UI set Base directory to "frontend";
+# everything else comes from this file.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Socket.IO connects straight to the backend (Netlify's proxy does not carry WebSockets).
+  # Not a secret: every VITE_ value ends up in the public JavaScript.
+  VITE_WS_URL = "https://aidetection-zzeg.onrender.com"
+
+# API calls are proxied so the browser sees them on this site's own origin:
+# the refresh-token cookie stays first-party and no CORS is needed for HTTP calls.
+# Must come before the SPA fallback.
+[[redirects]]
+  from = "/api/*"
+  to = "https://aidetection-zzeg.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback so refreshing /dashboard, /settings, ... loads the app (createWebHistory).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # Only this site may use the camera; microphone and location are never needed.
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=()"
+
+# Large detection assets: cache for a day (their names are not content-hashed).
+[[headers]]
+  for = "/models/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/mediapipe/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

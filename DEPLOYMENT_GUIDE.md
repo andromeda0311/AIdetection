@@ -238,6 +238,8 @@ Do not set `PORT`; Render provides it and `env.ts` reads it. `HOST` defaults to 
 
 **Done when:** `https://<service>.onrender.com/health` returns `{"success":true,"status":"ok","database":"connected"}`.
 
+**Status (23 October 2026): done.** Live at `https://aidetection-zzeg.onrender.com` (Singapore). Checked from outside: `/health` reports the database connected; `/api/health` answers without a database query; detection reports, YOLO toggle, staff, audit logs and recording start all return 401 without a login; wrong-password login returns 401; CORS allows only the configured origin; Socket.IO refuses missing and invalid tokens; HSTS, `nosniff` and rate-limit headers present. `npm audit fix` cleared all runtime dependency vulnerabilities (including a critical `proxy-addr` IP-spoofing issue relevant to `trust proxy`).
+
 ---
 
 ## Phase 6: Deploy the frontend on Netlify
