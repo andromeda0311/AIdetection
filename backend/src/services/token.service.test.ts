@@ -20,6 +20,13 @@ describe('token.service', () => {
     expect(payload.type).toBe('refresh');
   });
 
+  it('issues distinct refresh tokens within the same second', () => {
+    const first = signRefreshToken(user.id);
+    const second = signRefreshToken(user.id);
+    expect(second).not.toBe(first);
+    expect(hashToken(second)).not.toBe(hashToken(first));
+  });
+
   it('rejects an invalid access token', () => {
     expect(() => verifyAccessToken('not-a-token')).toThrow(ApiError);
   });

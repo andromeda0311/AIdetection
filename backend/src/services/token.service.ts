@@ -31,8 +31,11 @@ export function signAccessToken(user: TokenUser): string {
 }
 
 export function signRefreshToken(userId: string): string {
+  // A random jti keeps tokens unique even when two are issued in the same second
+  // (login then an immediate refresh), since token hashes must be unique.
   return jwt.sign({ type: 'refresh' }, config.jwt.refreshSecret, {
     subject: userId,
+    jwtid: crypto.randomUUID(),
     expiresIn: config.jwt.refreshTtl as jwt.SignOptions['expiresIn'],
   });
 }
