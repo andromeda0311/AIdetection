@@ -1,0 +1,17 @@
+node_modules/
+packages/
+frontend/dist/
+
+# Environment files (keep only examples)
+.env
+.env.*
+!.env.example
+
+# Build output and runtime data
+dist/
+backend/storage/
+
+# Python
+.venv/
+__pycache__/
+*.pyc

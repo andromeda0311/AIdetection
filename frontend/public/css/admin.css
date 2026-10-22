@@ -1,0 +1,284 @@
+/* Admin layout and pages (loads after theme). Sidebar: dark menu surface + high-contrast labels/icons. */
+@media (min-width: 992px) {
+  .app-content {
+    margin-block-start: 3.75rem;
+  }
+}
+
+#sidebar,
+#sidebar .main-sidebar,
+#sidebar .main-menu-container,
+#sidebar .main-menu,
+#sidebar .slide-menu {
+  background-color: #1e1e1e;
+}
+
+#sidebar .main-sidebar-header {
+  background-color: #1e1e1e;
+  border-bottom: 1px solid #2f2f2f;
+}
+
+#sidebar .slide-left svg path,
+#sidebar .slide-right svg path {
+  fill: #fafafa;
+}
+
+/*
+ * YNEX sets text/icon color on children (.side-menu__label, __icon, __angle) via var(--menu-prime-color),
+ * not only on the anchor — so we must override those explicitly (ID + .app-sidebar beats .app-sidebar alone).
+ */
+#sidebar.app-sidebar .side-menu__item:not(.active),
+#sidebar.app-sidebar .side-menu__item:not(.active) .side-menu__label,
+#sidebar.app-sidebar .side-menu__item:not(.active) .side-menu__icon,
+#sidebar.app-sidebar .side-menu__item:not(.active) .side-menu__angle {
+  color: #b8bcc3;
+  fill: #b8bcc3;
+}
+
+/* Theme uses font-weight 500 on .side-menu__item — force normal weight when not active */
+#sidebar.app-sidebar .side-menu__item:not(.active),
+#sidebar.app-sidebar .side-menu__item:not(.active) .side-menu__label {
+  font-weight: 400 !important;
+}
+
+#sidebar.app-sidebar .side-menu__item:not(.active) {
+  border-left: 3px solid transparent;
+}
+
+#sidebar.app-sidebar .slide-menu .side-menu__item:not(.active),
+#sidebar.app-sidebar .slide-menu .side-menu__item:not(.active) .side-menu__label,
+#sidebar.app-sidebar .slide-menu .side-menu__item:not(.active) .side-menu__icon,
+#sidebar.app-sidebar .slide-menu .side-menu__item:not(.active) .side-menu__angle {
+  color: #b8bcc3;
+  fill: #b8bcc3;
+}
+
+#sidebar.app-sidebar .slide-menu .side-menu__item:not(.active),
+#sidebar.app-sidebar .slide-menu .side-menu__item:not(.active) .side-menu__label {
+  font-weight: 400 !important;
+}
+
+#sidebar.app-sidebar .slide-menu .side-menu__item:not(.active) {
+  border-left: 3px solid transparent;
+}
+
+#sidebar .slide__category .category-name {
+  color: #d4d4d8;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+#sidebar .side-menu__item:hover:not(.active),
+#sidebar .slide.has-sub.open > .side-menu__item:not(.active) {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+#sidebar .side-menu__item:hover:not(.active),
+#sidebar .side-menu__item:hover:not(.active) .side-menu__label,
+#sidebar .side-menu__item:hover:not(.active) .side-menu__icon,
+#sidebar .side-menu__item:hover:not(.active) .side-menu__angle,
+#sidebar .slide.has-sub.open > .side-menu__item:not(.active),
+#sidebar .slide.has-sub.open > .side-menu__item:not(.active) .side-menu__label,
+#sidebar .slide.has-sub.open > .side-menu__item:not(.active) .side-menu__icon,
+#sidebar .slide.has-sub.open > .side-menu__item:not(.active) .side-menu__angle {
+  color: #e4e4e8;
+  fill: #e4e4e8;
+}
+
+#sidebar .side-menu__item:hover:not(.active),
+#sidebar .side-menu__item:hover:not(.active) .side-menu__label,
+#sidebar .slide.has-sub.open > .side-menu__item:not(.active),
+#sidebar .slide.has-sub.open > .side-menu__item:not(.active) .side-menu__label {
+  font-weight: 400 !important;
+}
+
+#sidebar .side-menu__item.active {
+  color: #ffffff;
+  background-color: #2d2d2d;
+  font-weight: 600;
+  border-left: 3px solid transparent;
+  border-left-color: rgb(var(--primary-rgb));
+}
+
+#sidebar .side-menu__item.active:hover {
+  color: #ffffff;
+  background-color: #353535;
+}
+
+#sidebar .side-menu__item.active .side-menu__label,
+#sidebar .side-menu__item.active .side-menu__icon,
+#sidebar .side-menu__item.active .side-menu__angle {
+  color: #ffffff;
+  fill: #ffffff;
+}
+
+#sidebar .side-menu__item.active .side-menu__label {
+  font-weight: 600 !important;
+}
+
+#sidebar .slide-menu .side-menu__item.active {
+  background-color: #2d2d2d;
+  color: #ffffff;
+  font-weight: 600;
+  border-left: 3px solid transparent;
+  border-left-color: rgb(var(--primary-rgb));
+}
+
+#sidebar .slide-menu .side-menu__item.active:hover {
+  color: #ffffff;
+  background-color: #353535;
+}
+
+#sidebar .slide-menu .side-menu__item.active .side-menu__label,
+#sidebar .slide-menu .side-menu__item.active .side-menu__icon {
+  color: #ffffff;
+  fill: #ffffff;
+}
+
+#sidebar .slide-menu .side-menu__item.active .side-menu__label {
+  font-weight: 600 !important;
+}
+
+#sidebar .slide-menu .side-menu__item:hover:not(.active),
+#sidebar .slide-menu .side-menu__item:hover:not(.active) .side-menu__label {
+  font-weight: 400 !important;
+}
+
+#sidebar .slide-menu.child1 .side-menu__item.active::before,
+#sidebar .slide-menu.child2 .side-menu__item.active::before,
+#sidebar .slide-menu.child3 .side-menu__item.active::before {
+  border-color: #ffffff;
+  opacity: 1;
+}
+
+#sidebar .side-menu__item:focus-visible {
+  outline: 2px solid #fafafa;
+  outline-offset: 2px;
+  border-radius: 0.375rem;
+}
+
+#sidebar.app-sidebar .slide-menu.child1 .side-menu__item,
+#sidebar.app-sidebar .slide-menu.child2 .side-menu__item,
+#sidebar.app-sidebar .slide-menu.child3 .side-menu__item {
+  padding: 0.6rem 1.6rem;
+}
+
+/* Long labels: theme sets .side-menu__label { white-space: nowrap } — allow wrapping */
+#sidebar.app-sidebar .side-menu__item {
+  align-items: center;
+}
+
+#sidebar.app-sidebar .side-menu__item .side-menu__label {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  line-height: 1.35;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Rows with a leading icon (Remix / Boxicons): looser label line-height fights the fixed icon box — tighten so text matches theme cap-height. Leaf rows without icons keep 1.35 for readability. */
+#sidebar.app-sidebar .side-menu__item:has(> .side-menu__icon) .side-menu__label {
+  line-height: 1.15;
+}
+
+#sidebar.app-sidebar .side-menu__item .side-menu__icon {
+  flex-shrink: 0;
+  margin-top: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* Reserve space for chevron on expandable items */
+#sidebar.app-sidebar .slide.has-sub > .side-menu__item .side-menu__label {
+  padding-inline-end: 1.25rem;
+}
+
+/* YNEX hides .notifications-dropdown / .header-shortcuts-dropdown below sm; show them like .header-search (override theme, keep vendor CSS untouched). */
+@media (max-width: 575.98px) {
+  .header-element.notifications-dropdown,
+  .header-element.header-shortcuts-dropdown {
+    display: flex !important;
+  }
+}
+
+/* Top module nav active state: keep a light highlight in admin header. */
+#navbarNavModules .navbar-nav .nav-link[data-module-link="true"] {
+  border-radius: 0.375rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  border: 1px solid transparent;
+}
+
+#navbarNavModules .navbar-nav .nav-item.dropdown .dropdown-menu {
+  min-width: 12rem;
+}
+
+#navbarNavModules .navbar-nav .nav-link[data-module-link="true"].active {
+  background-color: rgba(var(--primary-rgb), 0.14) !important;
+  color: var(--primary-color) !important;
+  border-color: rgba(var(--primary-rgb), 0.24);
+}
+
+.main-header-container #navbarNavModules .navbar-nav .dropdown-toggle::after {
+  content: "\f282";
+  font-family: bootstrap-icons !important;
+}
+
+@media (min-width: 992px) {
+  /* Match vertical rhythm of .header-link / logo row (same idea as .header-shortcuts-dropdown). */
+  .main-header-container .header-content-left .header-element.header-modules-nav {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+  }
+
+  #navbarNavModules .navbar-nav .nav-item {
+    display: flex;
+    align-items: center;
+  }
+
+  #navbarNavModules .navbar-nav .nav-link[data-module-link="true"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.125rem;
+    line-height: 1.25;
+  }
+
+  .main-header-container #navbarNavModules.navbar-collapse {
+    align-items: center;
+  }
+
+  .main-header-container .header-shortcuts-dropdown .header-link-icon {
+    transform: translateY(2px);
+  }
+}
+
+/* Mobile Modules shortcuts grid (.header-shortcuts-dropdown); vertical align like other header toggles */
+@media (max-width: 991.98px) {
+  .main-header-container .header-content-left .header-element.header-shortcuts-dropdown {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+  }
+
+  .main-header-container .header-content-left .header-element.header-shortcuts-dropdown .dropdown {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    height: 100%;
+  }
+
+  .main-header-container .header-content-left .header-element.header-shortcuts-dropdown .form-select {
+    max-width: 12rem;
+  }
+
+  .main-header-container .header-content-left .header-shortcuts-dropdown .related-app.admin-modules-shortcut-active {
+    border-color: rgb(var(--primary-rgb)) !important;
+    background-color: rgba(var(--primary-rgb), 0.12) !important;
+    font-weight: 600;
+  }
+}
+

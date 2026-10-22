@@ -1,0 +1,51 @@
+{
+  "name": "taste",
+  "description": "Scaffold a modern, clean, and secure frontend using React + Vite + Tailwind CSS with a sleek icon set and best-practice security defaults.",
+  "version": "1.0.0",
+  "author": "opencode",
+  "commands": [
+    {
+      "name": "init",
+      "description": "Initialize a new frontend project with the taste stack",
+      "steps": [
+        "npm create vite@latest . -- --template react-ts",
+        "npm install",
+        "npm install -D tailwindcss postcss autoprefixer",
+        "npx tailwindcss init -p",
+        "npm install @heroicons/react",
+        "npm install helmet-csp",
+        "npm install react-helmet-async"
+      ],
+      "postInstall": [
+        "echo \"// tailwind.config.js\" > tailwind.config.js",
+        "echo \"/** @type {import('tailwindcss').Config} */\" >> tailwind.config.js",
+        "echo \"export default {\" >> tailwind.config.js",
+        "echo \"  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],\" >> tailwind.config.js",
+        "echo \"  theme: { extend: {} },\" >> tailwind.config.js",
+        "echo \"  plugins: [],\" >> tailwind.config.js",
+        "echo \"}\" >> tailwind.config.js",
+        "echo \"@tailwind base;@tailwind components;@tailwind utilities;\" > src/index.css"
+      ],
+      "files": {
+        "src/main.tsx": "import React from 'react'\nimport ReactDOM from 'react-dom/client'\nimport { HelmetProvider } from 'react-helmet-async'\nimport App from './App'\nimport './index.css'\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <HelmetProvider>\n      <App />\n    </HelmetProvider>\n  </React.StrictMode>\n)",
+        "src/components/Layout.tsx": "import { Helmet } from 'react-helmet-async'\nimport { ReactNode } from 'react'\n\nexport default function Layout({ children }: { children: ReactNode }) {\n  return (\n    <>\n      <Helmet>\n        <meta charSet='utf-8' />\n        <meta name='viewport' content='width=device-width, initial-scale=1' />\n        <title>Taste</title>\n        <meta name='description' content='Minimal, clean, secure frontend scaffold' />\n        <meta httpEquiv='Content-Security-Policy' content=\"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;\" />\n      </Helmet>\n      <div className='min-h-screen bg-gray-50 flex flex-col'>\n        <header className='bg-white border-b border-gray-200 px-4 py-3'>\n          <div className='max-w-7xl mx-auto flex items-center justify-between'>\n            <span className='text-xl font-semibold text-gray-900'>Taste</span>\n          </div>\n        </header>\n        <main className='flex-1 max-w-7xl mx-auto w-full px-4 py-8'>\n          {children}\n        </main>\n        <footer className='bg-white border-t border-gray-200 px-4 py-4'>\n          <div className='max-w-7xl mx-auto text-center text-sm text-gray-500'>\n            © {new Date().getFullYear()} Taste\n          </div>\n        </footer>\n      </div>\n    </>\n  )\n}",
+"src/App.tsx": "import Layout from './components/Layout'\n\nfunction App() {\n  return (\n    <Layout>\n      <p className='text-gray-700'>Your content goes here.</p>\n    </Layout>\n  )\n}\nexport default App"
+      }
+    },
+    {
+      "name": "dev",
+      "description": "Start the development server",
+      "command": "npm run dev"
+    },
+    {
+      "name": "build",
+      "description": "Create a production build",
+      "command": "npm run build"
+    },
+    {
+      "name": "preview",
+      "description": "Preview the production build locally",
+      "command": "npm run preview"
+    }
+  ]
+}

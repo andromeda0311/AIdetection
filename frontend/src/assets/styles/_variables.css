@@ -1,0 +1,102 @@
+:root {
+  /* Breakpoints (for reference in media queries) */
+  --breakpoint-sm: 480px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1200px;
+
+  /* Colours */
+  --color-bg: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f1f3f6;
+  --color-surface-elevated: #ffffff;
+  --color-border: #e2e5eb;
+  --color-border-subtle: #eef0f4;
+  --color-text-primary: #1a1d21;
+  --color-text-secondary: #5a5f66;
+  --color-text-muted: #8b919a;
+  --color-text-on-accent: #ffffff;
+
+  --color-accent: #2c6ef5;
+  --color-accent-hover: #1a5bd9;
+  --color-accent-soft: rgba(44, 110, 245, 0.08);
+  --color-accent-ring: rgba(44, 110, 245, 0.35);
+
+  --color-success: #1e9b4a;
+  --color-success-soft: rgba(30, 155, 74, 0.1);
+  --color-warning: #f5a623;
+  --color-warning-soft: rgba(245, 166, 35, 0.12);
+  --color-danger: #e53e3e;
+  --color-danger-soft: rgba(229, 62, 62, 0.1);
+
+  --color-sidebar: #111827;
+  --color-sidebar-hover: rgba(255, 255, 255, 0.06);
+  --color-sidebar-active: rgba(44, 110, 245, 0.18);
+  --color-sidebar-text: rgba(255, 255, 255, 0.72);
+  --color-sidebar-text-active: #ffffff;
+
+  /* Spacing (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.1);
+
+  /* Transitions */
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms ease;
+
+  /* Typography */
+  --font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-size-xs: 0.7rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-base: 0.9375rem;
+  --font-size-lg: 1.0625rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 2rem;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-tight: 1.2;
+  --line-height-base: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* Layout */
+  --sidebar-width: 260px;
+  --header-height: 64px;
+  --content-max-width: 1400px;
+
+  /* Z-index */
+  --z-dropdown: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+  --z-tooltip: 400;
+
+  /* Legacy PrimeVue token aliases */
+  --surface-ground: var(--color-bg);
+  --surface-card: var(--color-surface);
+  --surface-border: var(--color-border);
+  --text-color: var(--color-text-primary);
+  --text-color-secondary: var(--color-text-secondary);
+  --primary-color: var(--color-accent);
+}
