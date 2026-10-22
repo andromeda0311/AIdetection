@@ -80,10 +80,13 @@ All changes are in `backend/`.
 | `src/config/env.ts` | Add `TRUST_PROXY_HOPS` to the schema. |
 | `src/services/yoloLive.instance.ts` | The Socket.IO server uses only the first CORS origin (`config.corsOrigins[0]`). Pass the full `config.corsOrigins` list. |
 | `src/services/socketIoBroadcaster.ts` | Require a valid access token in the Socket.IO handshake (`auth.token`) and check roles before accepting control commands. Read-only state broadcasts may remain open if the client agrees. |
-| `src/routes/yolo.routes.ts` | `POST /yolo/detection` and `POST /yolo/toggle` have no authentication. Add `authenticate` (and `authorize` for toggle), or remove them once the Python service is retired in Phase 3. Keep `GET /health` public; it is the keep-alive target. |
+| `src/routes/yolo.routes.ts` | `POST /yolo/toggle` requires an admin login. `POST /yolo/detection` (Python → API) requires the `X-Ingest-Key` header to match `YOLO_INGEST_KEY` (new `src/middleware/requireIngestKey.ts`); with no key set it is open only when `NODE_ENV=development`. `yolo-service/app.py` sends the header when its own `YOLO_INGEST_KEY` is set. Keep `GET /health` public; it is the keep-alive target. |
+| `trafficSignal`, `trafficLightAudit`, `cameraRecording` services | Imported `signalIo` from `server.ts`, which started the whole server (and database) on import. Use `getSignalIo()` from `yoloLive.instance.ts` instead. |
+| `vitest.config.ts` (new) | Tests get fixed dummy env values, so they never read `backend/.env` or need a database. |
 | `src/config/ormconfig.ts` | Replace `ssl: { rejectUnauthorized: false }` with `ssl: { rejectUnauthorized: true }`. Neon uses publicly trusted certificates, so verification works without extra files. |
 | `package.json` | Add production scripts that run against the compiled output (the existing `db:migrate` uses a CommonJS runner with an ESM project):<br>`"db:migrate:prod": "typeorm migration:run -d dist/config/ormconfig.js"`<br>`"db:seed:prod": "node dist/db/seed.js"` |
-| `src/services/trafficSignal.service.test.ts` | Found in Phase 0: this test connects to the real database from `backend/.env` and fails when it is unreachable (`ENOTFOUND` for the old Aiven host). Mock the TypeORM data source/repositories so unit tests never need a database. |
+| `src/services/trafficSignal.service.test.ts` | Found in Phase 0: the suite failed to load because of the `server.ts` import above. Once loading, two assertions were outdated (RED re-sends every second with Arduino countdown timers); they now compare light changes only. |
+| `frontend/src/composables/useLiveSystemState.ts` | Sends the access token as Socket.IO `auth`, and on rejection renews the session and reconnects. |
 | `package.json` | Pin the Node version Render uses: change `engines.node` to `"22.x"` (or set `NODE_VERSION=22` on Render). |
 
 Cloud-only behaviour (set through environment values in Phase 5, no code change needed):
@@ -92,7 +95,9 @@ Cloud-only behaviour (set through environment values in Phase 5, no code change 
 - `DETECTION_MOCK=true`. Uploaded-video detection depends on the Python service, which is not hosted.
 - Uploads and recordings written to `UPLOAD_DIR` are lost when Render restarts. Hide or disable the upload and server-recording features in production until durable storage is added (see Phase 9).
 
-**Done when:** `npm run build && npm test` pass, and a local run with `NODE_ENV=production` starts, connects to a local PostgreSQL, and rejects unauthenticated calls to the secured routes.
+**Done when:** `npm run build && npm test` pass, and a local run with `NODE_ENV=production` rejects unauthenticated calls to the secured routes and Socket.IO.
+
+**Status (22 October 2026): done.** Backend typecheck, build and 29/29 tests pass; frontend typecheck passes. A production-mode smoke test (no database) passed 12/12: public `/api/health`, 401 for toggle and ingest without credentials, ingest key accepted, Socket.IO CORS for every listed origin and rejection of unknown origins, Socket.IO rejects missing/invalid tokens. Not yet exercised: login and valid-token socket connections against a real database (covered in Phase 4/8). Known leftover: `POST /api/yolo/detection` does not validate its body (a malformed payload returns 500); the route is key-protected and is retired in Phase 3.
 
 ---
 

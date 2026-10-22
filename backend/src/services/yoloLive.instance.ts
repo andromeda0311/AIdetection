@@ -15,7 +15,7 @@ export function initSignalIo(httpServer: HttpServer): SocketIOServer {
   if (signalIo) return signalIo;
 
   signalIo = new SocketIOServer(httpServer, {
-    cors: { origin: config.corsOrigins[0] ?? '*', credentials: true },
+    cors: { origin: config.corsOrigins, credentials: true },
     pingInterval: 10000,
     pingTimeout: 5000,
   });

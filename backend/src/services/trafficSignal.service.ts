@@ -4,12 +4,11 @@ import { createSignalEvent } from '../models/SignalEvent.js';
 import { createSignalController, type SignalController, type PedestrianState } from './signal/controller.js';
 import { appEvents, DETECTION_COMPLETED, type DetectionCompletedEvent } from './events.js';
 import { getConfig, upsertConfig, type SignalConfigData } from '../models/SignalConfig.js';
-import { signalIo } from '../server.js';
 import { SignalStateEnum, TriggeredByEnum } from '../entities/SignalEvent.js';
 import { SignalEvent } from '../entities/SignalEvent.js';
 import { logArduinoActivation } from './trafficLightAudit.service.js';
 import { ArduinoTransportEnum } from '../entities/TrafficLightAuditLog.js';
-import { yoloLive } from './yoloLive.instance.js';
+import { getSignalIo, yoloLive } from './yoloLive.instance.js';
 
 export interface SignalOptions {
   yellowMs: number;
@@ -334,7 +333,7 @@ export class TrafficSignalMachine {
     }
 
     // Broadcast real‑time update
-    signalIo.emit('signal:update', {
+    getSignalIo()?.emit('signal:update', {
       state,
       pedState: this.pedState,
       carTimer,
@@ -375,11 +374,11 @@ export class TrafficSignalMachine {
   }
 
   private broadcastModeChange(): void {
-    signalIo.emit('signal:mode', { mode: this.mode });
+    getSignalIo()?.emit('signal:mode', { mode: this.mode });
   }
 
   private broadcastManualTimersChange(): void {
-    signalIo.emit('signal:manualTimers', this.manualTimers);
+    getSignalIo()?.emit('signal:manualTimers', this.manualTimers);
   }
 }
 

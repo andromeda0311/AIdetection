@@ -21,6 +21,7 @@ const envSchema = z.object({
   JWT_REFRESH_TTL: z.string().default('7d'),
 
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
 
   COOKIE_SECURE: z.enum(['true', 'false']).default('false'),
   COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
@@ -56,6 +57,7 @@ const envSchema = z.object({
   YOLO_LIVE_ARDUINO_TRANSPORT: z.enum(['log', 'serial']).default('log'),
   YOLO_LIVE_ARDUINO_PORT: z.string().default('COM3'),
   YOLO_LIVE_ARDUINO_BAUD: z.coerce.number().int().positive().default(9600),
+  YOLO_INGEST_KEY: z.string().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -88,6 +90,7 @@ const config = {
   },
 
   corsOrigins: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
+  trustProxyHops: env.TRUST_PROXY_HOPS,
 
   cookie: {
     secure: env.COOKIE_SECURE === 'true',
@@ -132,6 +135,7 @@ const config = {
     arduinoTransport: env.YOLO_LIVE_ARDUINO_TRANSPORT,
     arduinoPort: env.YOLO_LIVE_ARDUINO_PORT,
     arduinoBaud: env.YOLO_LIVE_ARDUINO_BAUD,
+    ingestKey: env.YOLO_INGEST_KEY,
   },
 };
 

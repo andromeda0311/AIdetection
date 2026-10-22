@@ -1,7 +1,7 @@
 import { AppDataSource } from '../config/ormconfig.js';
 import { TrafficLightAuditLog, ArduinoTransportEnum } from '../entities/TrafficLightAuditLog.js';
 import { SignalStateEnum, TriggeredByEnum } from '../entities/SignalEvent.js';
-import { signalIo } from '../server.js';
+import { getSignalIo } from './yoloLive.instance.js';
 
 export interface LogArduinoActivationData {
   signalEventId: string;
@@ -29,7 +29,7 @@ export async function logArduinoActivation(data: LogArduinoActivationData): Prom
   const saved = await repo().save(entity);
 
   // Emit real-time event via SignalR (Socket.IO)
-  signalIo.emit('traffic:audit', {
+  getSignalIo()?.emit('traffic:audit', {
     id: saved.id,
     state: saved.state,
     triggeredBy: saved.triggeredBy,

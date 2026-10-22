@@ -13,6 +13,11 @@ function createFakeController() {
   return { controller, sent };
 }
 
+/** Light changes only: RED also re-sends every second with countdown timers for the Arduino display. */
+function transitions(sent: SignalState[]): SignalState[] {
+  return sent.filter((state, i) => i === 0 || state !== sent[i - 1]);
+}
+
 describe('TrafficSignalMachine', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -41,7 +46,7 @@ describe('TrafficSignalMachine', () => {
     await vi.advanceTimersByTimeAsync(20000);
     expect(machine.getStatus().state).toBe('GREEN');
 
-    expect(sent).toEqual(['YELLOW', 'RED', 'GREEN']);
+    expect(transitions(sent)).toEqual(['YELLOW', 'RED', 'GREEN']);
   });
 
   it('ignores detections with no pedestrians', async () => {
@@ -68,7 +73,7 @@ describe('TrafficSignalMachine', () => {
 
     await vi.advanceTimersByTimeAsync(1);
     expect(machine.getStatus().state).toBe('GREEN');
-    expect(sent).toEqual(['YELLOW', 'RED', 'GREEN']);
+    expect(transitions(sent)).toEqual(['YELLOW', 'RED', 'GREEN']);
   });
 
   it('forceState overrides the running cycle', async () => {

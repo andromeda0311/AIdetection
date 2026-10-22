@@ -1,5 +1,6 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import type { SystemState, SystemStateBroadcaster } from './yoloLive.service.js';
+import { isAdminSocket, socketAuthMiddleware } from './socketAuth.js';
 
 interface SocketIoBroadcasterConfig {
   io: SocketIOServer;
@@ -17,11 +18,17 @@ export function createSocketIoBroadcaster(config: SocketIoBroadcasterConfig): Sy
 }
 
 export function setupSocketIoHandlers(io: SocketIOServer, yoloLive: { getSystemState: () => SystemState }): void {
+  io.use((socket, next) => void socketAuthMiddleware(socket, next));
+
   io.on('connection', (socket: Socket) => {
     console.log(`Socket.io client connected: ${socket.id}`);
 
     socket.on('ui:subscribe', (data: { room: string }, ack) => {
       const { room } = data;
+      if (room === 'admin' && !isAdminSocket(socket)) {
+        ack?.({ success: false, error: 'Forbidden' });
+        return;
+      }
       if (room === 'dashboard' || room === 'admin') {
         socket.join(room);
         console.log(`Client ${socket.id} joined room: ${room}`);
@@ -37,6 +44,10 @@ export function setupSocketIoHandlers(io: SocketIOServer, yoloLive: { getSystemS
     });
 
     socket.on('ui:override_traffic', (data: { traffic: 'normal' | 'caution' | 'stopped' }, ack) => {
+      if (!isAdminSocket(socket)) {
+        ack?.({ success: false, error: 'Forbidden' });
+        return;
+      }
       console.log(`Manual traffic override requested: ${data.traffic} by ${socket.id}`);
       ack?.({ success: true, state: yoloLive.getSystemState() });
     });

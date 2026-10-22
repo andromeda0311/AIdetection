@@ -34,6 +34,9 @@ AUTO_DISCOVER_CAMERAS = os.getenv("AUTO_DISCOVER_CAMERAS", "true").strip().lower
 )
 PORT = int(os.getenv("PYTHON_PORT", "8000"))
 NODE_SERVER_URL = os.getenv("NODE_SERVER_URL", "http://localhost:4000")
+# Must match the backend's YOLO_INGEST_KEY when that is set.
+YOLO_INGEST_KEY = os.getenv("YOLO_INGEST_KEY", "")
+INGEST_HEADERS = {"X-Ingest-Key": YOLO_INGEST_KEY} if YOLO_INGEST_KEY else {}
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
 INFERENCE_INTERVAL = float(os.getenv("INFERENCE_INTERVAL", "0.12"))
 STREAM_FPS = float(os.getenv("STREAM_FPS", "25"))
@@ -166,6 +169,7 @@ async def publish_detections_loop() -> None:
                         await client.post(
                             f"{NODE_SERVER_URL}/api/yolo/detection",
                             json=fused,
+                            headers=INGEST_HEADERS,
                         )
                         last_signature = _fused_signature(fused)
                         last_post_at = now

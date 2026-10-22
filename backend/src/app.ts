@@ -13,6 +13,8 @@ import { apiRateLimiterUnlessYoloIngest } from './middleware/rateLimiter.js';
 export const app = express();
 
 app.disable('x-powered-by');
+// Hosted behind proxies (Netlify -> Render); needed for correct req.ip in rate limiting.
+app.set('trust proxy', config.trustProxyHops);
 
 app.use(helmet());
 app.use(

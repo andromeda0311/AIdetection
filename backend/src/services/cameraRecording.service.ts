@@ -3,7 +3,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { signalIo } from '../server.js';
+import { getSignalIo } from './yoloLive.instance.js';
 import config from '../config/env.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -216,7 +216,7 @@ class CameraRecordingService {
   }
 
   private broadcastStatus(): void {
-    signalIo?.to('dashboard').emit('recording:status', this.getStatus());
+    getSignalIo()?.to('dashboard').emit('recording:status', this.getStatus());
   }
 }
 

@@ -1,6 +1,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { io, Socket } from 'socket.io-client';
 import { getLiveSystemStatus } from '../api/live';
+import { useAuthStore } from '../stores/auth';
 import type { LiveSystemState, ServerToClientEvents, ClientToServerEvents, SignalMode, ManualTimers, RecordingStatus } from '../types';
 
 const wsUrl = import.meta.env.VITE_WS_URL ?? 'ws://localhost:4000';
@@ -56,6 +57,8 @@ export function useLiveSystemState() {
       reconnectionDelayMax: 10000,
       timeout: 10000,
       autoConnect: true,
+      // Called on every (re)connect so a renewed access token is picked up.
+      auth: (cb) => cb({ token: useAuthStore().accessToken ?? undefined }),
     });
 
     socket.on('connect', () => {
@@ -77,6 +80,15 @@ export function useLiveSystemState() {
     socket.on('connect_error', (err) => {
       connected.value = false;
       console.error('[Socket.io] Connection error:', err.message);
+      // Rejected by the server's auth check: Socket.IO won't retry on its own.
+      // Renew the session (expired access token) and reconnect.
+      if (!socket?.active && !disposed) {
+        void useAuthStore()
+          .refresh()
+          .finally(() => {
+            if (!disposed && useAuthStore().accessToken) setTimeout(() => socket?.connect(), 5000);
+          });
+      }
     });
 
     socket.on('system:state', (state: LiveSystemState) => {

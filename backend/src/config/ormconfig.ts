@@ -22,7 +22,7 @@ export const AppDataSource = new DataSource({
   entities: [SignalEvent, SignalConfig, StaffUser, RefreshToken, Detection, DetectionFrame, TrafficLightAuditLog],
   migrations: [migrationsPath],
   subscribers: [],
-  ...(config.dbSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  ...(config.dbSsl ? { ssl: { rejectUnauthorized: true } } : {}),
 });
 
 export async function initDB(): Promise<void> {

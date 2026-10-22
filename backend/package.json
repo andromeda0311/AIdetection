@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -15,6 +15,8 @@
     "db:migrate": "typeorm-ts-node-commonjs migration:run -d src/config/ormconfig.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:setup": "npm run db:migrate && npm run db:seed",
+    "db:migrate:prod": "typeorm migration:run -d dist/config/ormconfig.js",
+    "db:seed:prod": "node dist/db/seed.js",
     "typeorm:migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/ormconfig.ts",
     "typeorm:migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/config/ormconfig.ts src/migrations/InitSchema",
     "test": "vitest run"
