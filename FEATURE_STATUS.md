@@ -112,6 +112,8 @@ Code for 0.4–0.11 is done and tested; it goes live once the two proxy secrets 
 
 **Done when:** during a red phase the pedestrian light shows WALK and both countdowns tick; the mode shows correctly right after login.
 
+**Status (23 October 2026): done.** The live state carries `pedState`, `carTimer`, `pedTimer`, `mode` and `manualTimers`, and the website also listens to `signal:update`. Verified in the browser: WALK during every red sample, both countdowns tick, mode shows "auto" in Diagnostics and Settings.
+
 ## Phase 2: One traffic-light engine
 
 **Problem.** Two engines run separately: `backend/src/services/yoloLive.service.ts` (the automatic pedestrian cycle the dashboard shows) and `trafficSignal.service.ts` (manual mode, forced phases, test commands, signal events and the audit log). They share only the red duration.
@@ -121,6 +123,8 @@ Code for 0.4–0.11 is done and tested; it goes live once the two proxy secrets 
 **Fixes:** manual mode not stopping automatic cycles · forced phases and test cycles not appearing on the dashboard or Manual Controls status card · automatic pedestrian cycles missing from the Audit Logs (the page stays nearly empty) · YOLO enable/disable toggle only applying after a restart.
 
 **Done when:** in manual mode a detected pedestrian does not change the lights; a forced RED appears on the dashboard within a second; every automatic cycle creates audit-log rows.
+
+**Status (23 October 2026): done.** `yoloLive.service.ts` is the only engine: it owns the light, the timers, the Arduino commands and `system:state`. `trafficSignal.service.ts` sets the mode, sends forced phases and test cycles to it, and records a signal event, an audit row and `signal:update` for every phase change. The YOLO toggle applies without a restart. Verified in the browser: manual mode keeps the light green with people in view, a forced RED reaches the dashboard in under 20 ms, every automatic cycle adds YELLOW/RED/GREEN audit rows.
 
 ## Phase 3: Settings that change the system
 
