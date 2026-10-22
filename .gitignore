@@ -15,3 +15,6 @@ backend/storage/
 .venv/
 __pycache__/
 *.pyc
+
+# Copied from node_modules by frontend/scripts/copy-mediapipe-wasm.mjs
+frontend/public/mediapipe/

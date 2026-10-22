@@ -372,3 +372,21 @@ html.dark .process-icon { background:var(--ops-inset); color:var(--ops-cyan); }
   .metric-detected .safety-metric-body { padding:4px 10px; gap:2px; }
 }
 
+
+/* Browser webcam detection: controls, overlay and status messages. */
+.detection-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.camera-control { display:inline-flex; align-items:center; gap:5px; height:27px; padding:0 10px; border:1px solid #0d6e9e; border-radius:6px; background:#0d6e9e; color:#fff; font:inherit; font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.camera-control .safety-icon { width:14px; height:14px; }
+.camera-control:hover { background:#0a5b83; }
+.camera-control--stop { background:#f7fafc; color:#b4232c; border-color:#e8c4c6; }
+.camera-control--stop:hover { background:#fdecec; }
+.camera-control:focus-visible,.camera-select:focus-visible { outline:3px solid #61b9e1; outline-offset:2px; }
+.camera-select { height:27px; max-width:180px; padding:0 6px; border:1px solid #e0e7ee; border-radius:6px; background:#f7fafc; color:#2b4656; font:inherit; font-size:11px; }
+.camera-unavailable span { max-width:340px; padding:0 16px; text-align:center; line-height:1.45; }
+.camera-unavailable--error { color:#ffd9d9; }
+html.dark .camera-select { background:var(--ops-inset); border-color:var(--c-border); color:var(--c-text); }
+html.dark .camera-control--stop { background:var(--ops-inset); border-color:var(--c-border); color:#ff8a8f; }
+@media(max-width:760px) {
+  .camera-header-actions { flex-wrap:wrap; justify-content:flex-end; }
+  .camera-select { max-width:130px; }
+}

@@ -8,12 +8,16 @@
     "node": ">=20"
   },
   "scripts": {
+    "predev": "node scripts/copy-mediapipe-wasm.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-mediapipe-wasm.mjs",
     "build": "node --max-old-space-size=8192 node_modules/vue-tsc/bin/vue-tsc.js --noEmit && node --max-old-space-size=8192 node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
-    "typecheck": "node --max-old-space-size=8192 node_modules/vue-tsc/bin/vue-tsc.js --noEmit"
+    "typecheck": "node --max-old-space-size=8192 node_modules/vue-tsc/bin/vue-tsc.js --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "1.0.1",
     "@tabler/icons-vue": "3.49.0",
     "axios": "^1.7.9",
     "pinia": "^2.3.0",
@@ -28,6 +32,7 @@
     "@vue/tsconfig": "^0.7.0",
     "typescript": "^5.6.3",
     "vite": "^6.4.3",
+    "vitest": "4.1.10",
     "vue-tsc": "^2.1.10"
   }
 }

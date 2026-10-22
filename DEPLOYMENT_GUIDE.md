@@ -122,21 +122,22 @@ Behaviour:
 - Stop all tracks and the detection loop when switching cameras, leaving the page, or pressing Stop.
 - The count means **people visible in the current frame**. Unique visitors or crossing counts are a separate feature.
 
-Files:
+Files (as built; the live dashboard is `DashboardView` → `SafetyCamera`, so the unused `MultiCameraGrid`, `LiveStage`, `LiveDetectionPanel`, `BoundingBoxOverlay` and `SystemHealthRail` are left for removal in Phase 3):
 
 | File | Change |
 | --- | --- |
-| `frontend/package.json` | Add the pinned detector package. |
-| New `frontend/src/composables/useWebcamDetection.ts` | Camera permission, device list, track lifecycle, model loading, detection loop, count, boxes, errors. |
-| New `frontend/src/utils/personDetector.ts` | Wraps the detector: load once, `detect(video, timestamp)` returning typed boxes. Move to a Web Worker if the dashboard stutters. |
-| `frontend/src/types.ts` | Add webcam state, selected device ID, model readiness, current count, boxes, last-frame time. |
-| `frontend/src/components/dashboard/MultiCameraGrid.vue` | Replace the MJPEG `<img>` and Python camera list with `<video>`, the overlay canvas, the camera selector and Start/Stop. Start with one camera. |
-| `frontend/src/components/dashboard/LiveStage.vue` | Read the count and boxes from `useWebcamDetection` instead of backend detection messages. |
-| `frontend/src/components/BoundingBoxOverlay.vue` | Reuse for drawing if it fits the new box format; otherwise adapt. |
-| `frontend/src/components/LiveDetectionPanel.vue` | Migrate if still used; otherwise remove from views. |
-| `frontend/src/components/dashboard/SystemHealthRail.vue`, `TelemetryStatusCard.vue` | Show camera and model readiness independently of the backend. Remove "YOLO service" status. |
+| `frontend/package.json` | `@mediapipe/tasks-vision` pinned to `1.0.1`; `predev`/`prebuild` copy its WebAssembly runtime; `vitest` and `npm test` added. |
+| `frontend/public/models/efficientdet_lite0_fp16.tflite` | EfficientDet-Lite0 (float16, COCO) from Google's MediaPipe model storage, served from the site. |
+| New `frontend/scripts/copy-mediapipe-wasm.mjs` | Copies the runtime into `public/mediapipe/wasm/` (git-ignored) so it always matches the npm version. |
+| New `frontend/src/utils/personDetector.ts` | Loads the detector once (GPU, falling back to CPU), keeps confident `person` results, returns boxes normalised to the frame. |
+| New `frontend/src/utils/detectionOverlay.ts` | Maps boxes onto the letterboxed (`object-fit: contain`) video and draws labelled boxes on a high-DPI canvas. |
+| New `frontend/src/composables/useWebcamDetection.ts` | Permission, camera list and selection (remembered), track lifecycle, detection loop (~150 ms, no overlap), count, stall/unplug detection, pause while the tab is hidden, operator-facing error messages. Count is `null` whenever detection is not running. |
+| `frontend/src/components/dashboard/SafetyCamera.vue` | `<video>` + overlay canvas, camera selector, Start/Stop/Try again, a message for every state. |
+| `frontend/src/views/DashboardView.vue` | Count, trend chart and activity log use the local detection instead of the backend's YOLO messages. |
 
 **Done when:** on `npm run dev` at `http://localhost:5173`, the external webcam opens after permission and the count is correct for zero, one, and several people, with boxes aligned.
+
+**Status (22 October 2026): done, pending a check with the real USB webcam.** Frontend typecheck, production build and 16/16 unit tests pass. A headless-Chrome end-to-end test (fake webcam fed from video files, two full passes, all checks passed) confirmed: camera + model ready within seconds; real pedestrians (OpenCV `vtest.avi`) counted 2-5 with aligned boxes; empty scene counted 0 with no boxes; the project's scale-model figure detected in roughly 55-80% of samples at 77% confidence; Stop releases the camera and clears the count and boxes; unplug and permission denial show recovery messages and never show a number; about 4-5 detections per second in headless Chrome. Known limits: people walking close together can merge into one box (undercount in groups), and the small model figure flickers between 0 and 1. If that matters, try a lower `minScore` or the larger EfficientDet-Lite2 model and re-measure on the real laptop.
 
 ---
 
