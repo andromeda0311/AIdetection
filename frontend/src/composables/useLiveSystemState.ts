@@ -2,19 +2,29 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { io, Socket } from 'socket.io-client';
 import { getLiveSystemStatus } from '../api/live';
 import { useAuthStore } from '../stores/auth';
-import type { LiveSystemState, ServerToClientEvents, ClientToServerEvents, SignalMode, ManualTimers, RecordingStatus } from '../types';
+import type { LiveSystemState, ServerToClientEvents, ClientToServerEvents, SignalMode, SignalUpdate, ManualTimers, RecordingStatus } from '../types';
 
 const wsUrl = import.meta.env.VITE_WS_URL ?? 'ws://localhost:4000';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-function normalizeLiveState(payload: LiveSystemState): LiveSystemState {
+export function normalizeLiveState(payload: LiveSystemState): LiveSystemState {
   return {
     ...payload,
     detections: payload.detections ?? [],
     frameWidth: payload.frameWidth ?? 0,
     frameHeight: payload.frameHeight ?? 0,
     updatedAt: payload.updatedAt ?? Date.now(),
+  };
+}
+
+/** Merges the fields a `signal:update` event carries into the live state. */
+export function mergeSignalUpdate(state: LiveSystemState, data: SignalUpdate): LiveSystemState {
+  return {
+    ...state,
+    pedState: data.pedState,
+    carTimer: data.carTimer,
+    pedTimer: data.pedTimer,
   };
 }
 
@@ -93,6 +103,12 @@ export function useLiveSystemState() {
 
     socket.on('system:state', (state: LiveSystemState) => {
       applyState(state);
+    });
+
+    socket.on('signal:update', (data: SignalUpdate) => {
+      if (liveState.value) {
+        liveState.value = mergeSignalUpdate(liveState.value, data);
+      }
     });
 
     socket.on('yolo:toggle', (data: { enabled: boolean }) => {

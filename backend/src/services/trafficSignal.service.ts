@@ -90,12 +90,16 @@ export class TrafficSignalMachine {
       this.clearRedCountdown();
     }
     this.broadcastModeChange();
+    // Keep the mode in the live system state (system:state, /api/system/status) in sync.
+    yoloLive.refreshSignalState();
   }
 
   async setManualTimers(timers: Partial<ManualTimers>): Promise<void> {
     this.manualTimers = { ...this.manualTimers, ...timers };
     await this.persistConfig();
     this.broadcastManualTimersChange();
+    // Keep the manual timers in the live system state in sync as well.
+    yoloLive.refreshSignalState();
     // Keep the auto (YOLO) cycle in sync with the configured red stop duration.
     if (timers.redMs !== undefined) {
       yoloLive.setDurations({ stopDurationMs: timers.redMs });
@@ -397,6 +401,13 @@ export const trafficSignal = new TrafficSignalMachine(
     });
   },
 );
+
+// Share the operating mode and manual timers with the live system state that
+// yoloLive broadcasts (system:state) and /api/system/status returns.
+yoloLive.setSignalStateProvider(() => ({
+  mode: trafficSignal.getMode(),
+  manualTimers: trafficSignal.getManualTimers(),
+}));
 
 // Serial commands are sent lazily on the first state change; the sketch pins are fixed in firmware.
 export async function initTrafficSignal(): Promise<void> {

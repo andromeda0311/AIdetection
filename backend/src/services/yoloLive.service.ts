@@ -58,6 +58,25 @@ export interface CameraLiveView {
   frameHeight: number;
 }
 
+/** Operating mode of the traffic-signal engine. */
+export type SignalOperatingMode = 'auto' | 'manual';
+
+/** Signal timer settings configured by the administrator (phase durations). */
+export interface ManualTimersState {
+  greenMs: number;
+  yellowMs: number;
+  redMs: number;
+  pedWalkMs: number;
+}
+
+/** Operating mode and timer settings the signal machine exposes for the live state. */
+export interface SignalRuntimeState {
+  mode: SignalOperatingMode;
+  manualTimers: ManualTimersState;
+}
+
+export type SignalRuntimeStateProvider = () => SignalRuntimeState | null;
+
 export interface SystemState {
   yolo: 'online' | 'offline';
   camera: 'online' | 'offline';
@@ -72,6 +91,11 @@ export interface SystemState {
   cycleRemainingSec: number;
   thresholdRequiredSec: number;
   autoStopSec: number;
+  pedState: 'WALK' | 'DONT_WALK';
+  carTimer: number | null;
+  pedTimer: number | null;
+  mode: SignalOperatingMode;
+  manualTimers: ManualTimersState | null;
   detections: LiveDetectionBox[];
   frameWidth: number;
   frameHeight: number;
@@ -159,6 +183,13 @@ function broadcastSignature(state: SystemState): string {
     state.cyclePhase,
     state.cycleRemainingSec,
     state.autoStopSec,
+    state.pedState,
+    state.carTimer,
+    state.pedTimer,
+    state.mode,
+    state.manualTimers
+      ? `${state.manualTimers.greenMs}/${state.manualTimers.yellowMs}/${state.manualTimers.redMs}/${state.manualTimers.pedWalkMs}`
+      : '-',
     boxes,
     cameraSignature(state.cameras),
     state.fusionMode,
@@ -181,6 +212,11 @@ export class YoloLiveService {
     cycleRemainingSec: 0,
     thresholdRequiredSec: 5,
     autoStopSec: 0,
+    pedState: 'DONT_WALK',
+    carTimer: null,
+    pedTimer: null,
+    mode: 'auto',
+    manualTimers: null,
     detections: [],
     frameWidth: 0,
     frameHeight: 0,
@@ -192,6 +228,7 @@ export class YoloLiveService {
 
   private detectionStartedAt: number | null = null;
   private trafficCycleActive = false;
+  private signalStateProvider: SignalRuntimeStateProvider | null = null;
   private yellowTimer: NodeJS.Timeout | null = null;
   private stopTimer: NodeJS.Timeout | null = null;
   private countdownInterval: NodeJS.Timeout | null = null;
@@ -387,7 +424,34 @@ export class YoloLiveService {
     this.arduino.send('COUNTDOWN:PEDS:00' as ArduinoCommand);
   }
 
+  /** Register where the operating mode and manual timer settings come from (the signal machine). */
+  setSignalStateProvider(provider: SignalRuntimeStateProvider | null): void {
+    this.signalStateProvider = provider;
+    this.refreshSignalState();
+  }
+
+  /** Re-read mode/manualTimers from the provider and broadcast — used when the signal machine changes them. */
+  refreshSignalState(): void {
+    this.maybeBroadcast(Date.now(), false);
+  }
+
+  /** Derive pedestrian-signal fields from the running cycle and the signal machine's mode. */
+  private updateSignalStateFields(): void {
+    const runtime = this.signalStateProvider?.() ?? null;
+    this.systemState.mode = runtime?.mode ?? 'auto';
+    this.systemState.manualTimers = runtime?.manualTimers ?? null;
+    // While the car light is red the pedestrians may cross; any other phase means they wait.
+    this.systemState.pedState = this.systemState.traffic === 'stopped' ? 'WALK' : 'DONT_WALK';
+    // During a running phase both countdowns show the seconds remaining of that phase.
+    const remaining = this.systemState.cycleActive
+      ? Math.max(0, Math.floor(this.systemState.cycleRemainingSec))
+      : null;
+    this.systemState.carTimer = remaining;
+    this.systemState.pedTimer = remaining;
+  }
+
   private maybeBroadcast(now: number, respectThrottle: boolean): void {
+    this.updateSignalStateFields();
     const signature = broadcastSignature(this.systemState);
     const signatureChanged = signature !== this.lastBroadcastSignature;
     const intervalElapsed = now - this.lastBroadcastAt >= this.broadcastIntervalMs;
@@ -401,6 +465,7 @@ export class YoloLiveService {
 
   getSystemState(): SystemState {
     this.systemState.arduino = this.arduino.getStatus();
+    this.updateSignalStateFields();
     return {
       ...this.systemState,
       detections: [...this.systemState.detections],
