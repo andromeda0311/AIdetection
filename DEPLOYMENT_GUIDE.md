@@ -290,6 +290,10 @@ Do not set `PORT`; Render provides it and `env.ts` reads it. `HOST` defaults to 
 
 **Done when:** the site loads at `https://<site>.netlify.app`, login works, refreshing any page stays logged in, and the browser's network tab shows `/api/...` calls on the Netlify origin.
 
+Notes from deploying: `VITE_WS_URL` is set in `frontend/netlify.toml`, so no Netlify environment variables are needed. New Netlify projects may have **visitor access protection** on (every request returns 401 and redirects to a Netlify login); set it to public under Project configuration → General → Visitor access. The Netlify build itself succeeded without memory problems.
+
+**Status (23 October 2026): deployed, pending the user's login test.** Live at `https://ai-pedes-detection.netlify.app`; Render `CORS_ORIGIN` set to it. Checked from outside: all app routes return the app (deep-link refresh works); `/api/*` reaches Render through the proxy; unauthenticated login/report/refresh calls return 401; model and both WebAssembly runtimes load with correct types and caching; `Permissions-Policy: camera=(self)`, `nosniff`, HSTS present; built JavaScript points Socket.IO at Render, contains no `localhost` URLs, and has the login-bypass preview compiled out.
+
 ---
 
 ## Phase 7: Keep the backend awake
