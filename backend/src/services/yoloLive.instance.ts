@@ -48,3 +48,7 @@ export const yoloLive = new YoloLiveService(
   config.yoloLive.yellowDurationMs,
   config.yoloLive.stopDurationMs,
 );
+
+// When the detection feed (dashboard browser or Python) goes quiet, mark it offline
+// and drop the stale pedestrian state.
+setInterval(() => yoloLive.markYoloOffline(), 1000).unref();

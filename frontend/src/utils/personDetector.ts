@@ -56,13 +56,26 @@ export async function createPersonDetector(minScore: number): Promise<PersonDete
       maxResults: 50,
     });
 
+  // The first detection compiles the GPU pipeline and can block the page for seconds.
+  // Doing it here keeps the UI on "Loading…" until detection is really ready, and a
+  // GPU that fails at this point falls back to the CPU instead of failing live.
+  const warmUp = (instance: ObjectDetector) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 240;
+    canvas.getContext('2d')?.fillRect(0, 0, canvas.width, canvas.height);
+    instance.detectForVideo(canvas, performance.now());
+  };
+
   let delegate: 'GPU' | 'CPU' = 'GPU';
   let detector: ObjectDetector;
   try {
     detector = await create('GPU');
+    warmUp(detector);
   } catch {
     delegate = 'CPU';
     detector = await create('CPU');
+    warmUp(detector);
   }
 
   return {

@@ -140,10 +140,10 @@ onMounted(() => {
           />
         </div>
         <span class="mode-toggle__hint" v-if="mode === 'manual'">
-          YOLO detection ignored. Use buttons below to control signals.
+          Pedestrian detection ignored. Use buttons below to control signals.
         </span>
         <span class="mode-toggle__hint" v-else>
-          YOLO detection active. Signals change automatically on pedestrian detection.
+          Pedestrian detection active. Signals change automatically when a pedestrian is detected.
         </span>
       </div>
 

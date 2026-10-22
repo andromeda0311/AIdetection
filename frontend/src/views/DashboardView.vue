@@ -6,14 +6,14 @@ import SafetySignal from '@/components/dashboard/SafetySignal.vue';
 import PedestrianTrend from '@/components/dashboard/PedestrianTrend.vue';
 import { useSafetySettings } from '@/composables/useSafetySettings';
 import { useDashboardPreferences } from '@/composables/useDashboardPreferences';
-import { useWebcamDetection } from '@/composables/useWebcamDetection';
+import type { WebcamDetection } from '@/composables/useWebcamDetection';
 import { authDisabled } from '@/utils/preview';
 import type { LiveSystemState } from '@/types';
 
 const { liveState, connected } = inject<{ liveState: Ref<LiveSystemState | null>; connected: Ref<boolean> }>('operationsState')!;
 const preview = computed(() => authDisabled && !liveState.value);
 // People are detected in this browser from the local webcam; null means detection is not running.
-const detection = useWebcamDetection();
+const detection = inject<WebcamDetection>('webcamDetection')!;
 const count = computed(() => preview.value && detection.status.value === 'idle' ? 1 : detection.count.value);
 const pedestrianInView = computed(() => (detection.count.value ?? 0) > 0);
 const countDialog = ref<HTMLDialogElement | null>(null);

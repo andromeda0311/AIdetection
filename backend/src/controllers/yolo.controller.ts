@@ -2,10 +2,18 @@ import type { Request, Response } from 'express';
 import { yoloLive } from '../services/yoloLive.instance.js';
 import { sendSuccess } from '../utils/response.js';
 import type { YoloDetectionPayload } from '../services/yoloLive.service.js';
+import type { LiveDetectionBody } from '../dto/detection.dto.js';
+import { browserReportToPayload } from '../services/liveDetection.js';
 
 export async function postYoloDetection(req: Request, res: Response): Promise<void> {
   yoloLive.handleDetection(req.body as YoloDetectionPayload);
   res.sendStatus(200);
+}
+
+/** Live detections from a logged-in dashboard's browser webcam (replaces the Python feed). */
+export async function postBrowserDetection(req: Request, res: Response): Promise<void> {
+  yoloLive.handleDetection(browserReportToPayload(req.body as LiveDetectionBody));
+  res.sendStatus(204);
 }
 
 export async function getYoloStatus(_req: Request, res: Response): Promise<Response> {

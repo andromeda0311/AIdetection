@@ -68,10 +68,23 @@ function storeDevice(deviceId: string): void {
   }
 }
 
+/** Off-screen-safe video element used only for inference; pages show the stream in their own <video>. */
+function createInferenceVideo(): HTMLVideoElement {
+  const element = document.createElement('video');
+  element.muted = true;
+  element.playsInline = true;
+  element.setAttribute('aria-hidden', 'true');
+  // Kept in the document and inside the viewport so browsers do not pause it as hidden media.
+  element.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;z-index:-1;';
+  document.body.appendChild(element);
+  return element;
+}
+
 /**
  * Opens a webcam in the browser and counts visible people with an on-device model.
  * The count is null whenever detection is not actually running, so "no data" is
- * never shown as zero people.
+ * never shown as zero people. Create it once per app (layout) so monitoring keeps
+ * running while the operator uses other pages.
  */
 export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
   const minScore = options.minScore ?? 0.5;
@@ -87,12 +100,13 @@ export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
   const lastDetectionAt = ref(0);
   const detectionsPerSecond = ref(0);
   const delegate = ref<'GPU' | 'CPU' | null>(null);
+  /** The live camera stream, for pages that want to display it. */
+  const stream = shallowRef<MediaStream | null>(null);
 
   const active = computed(() => status.value === 'monitoring' || status.value === 'paused' || status.value === 'loading' || status.value === 'requesting');
   const count = computed<number | null>(() => (status.value === 'monitoring' && lastDetectionAt.value > 0 ? boxes.value.length : null));
 
-  let video: HTMLVideoElement | null = null;
-  let stream: MediaStream | null = null;
+  const video = createInferenceVideo();
   let detector: PersonDetector | null = null;
   let loopTimer: ReturnType<typeof setTimeout> | null = null;
   let runId = 0;
@@ -113,12 +127,12 @@ export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
   }
 
   function releaseStream(): void {
-    stream?.getTracks().forEach((track) => {
+    stream.value?.getTracks().forEach((track) => {
       track.onended = null;
       track.stop();
     });
-    stream = null;
-    if (video) video.srcObject = null;
+    stream.value = null;
+    video.srcObject = null;
   }
 
   function fail(message: string): void {
@@ -143,7 +157,7 @@ export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
   }
 
   function runDetection(id: number): void {
-    if (id !== runId || !video || !detector) return;
+    if (id !== runId || !detector) return;
     if (status.value !== 'monitoring') return;
 
     const now = performance.now();
@@ -215,8 +229,7 @@ export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
       return;
     }
 
-    stream = next;
-    const track = stream.getVideoTracks()[0];
+    const track = next.getVideoTracks()[0];
     const activeId = track?.getSettings().deviceId;
     if (activeId) {
       deviceId.value = activeId;
@@ -224,9 +237,10 @@ export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
     }
     if (track) track.onended = () => fail('The camera was disconnected. Plug it back in, then press Start monitoring.');
 
+    // Recorded before play() so a failure below still releases the camera.
+    stream.value = next;
     await refreshDevices();
-    if (!video) throw new Error('Video element is not ready.');
-    video.srcObject = stream;
+    video.srcObject = next;
     await video.play();
   }
 
@@ -273,14 +287,6 @@ export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
     if (active.value) await start();
   }
 
-  function attach(element: HTMLVideoElement | null): void {
-    video = element;
-    if (video) {
-      video.muted = true;
-      video.playsInline = true;
-    }
-  }
-
   function onVisibilityChange(): void {
     if (document.visibilityState === 'hidden' && status.value === 'monitoring') {
       stopLoop();
@@ -298,6 +304,7 @@ export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
 
   onScopeDispose(() => {
     stop();
+    video.remove();
     document.removeEventListener('visibilitychange', onVisibilityChange);
     navigator.mediaDevices?.removeEventListener?.('devicechange', onDeviceChange);
   });
@@ -314,7 +321,7 @@ export function useWebcamDetection(options: WebcamDetectionOptions = {}) {
     lastDetectionAt,
     detectionsPerSecond,
     delegate,
-    attach,
+    stream,
     start,
     stop,
     selectDevice,

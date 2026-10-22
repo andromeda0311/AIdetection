@@ -152,6 +152,19 @@ Files (as built; the live dashboard is `DashboardView` → `SafetyCamera`, so th
 
 **Done when:** the dashboard runs locally with `yolo-service` stopped and shows no Python-related errors.
 
+As built:
+
+- **The browser now drives the traffic lights.** The backend's live cycle (person seen for the threshold time → caution → red with countdown) was fed only by the Python service. `frontend/src/composables/useDetectionReporter.ts` sends the browser's count to the new `POST /api/live/detection` (login required, validated, same rate-limit bucket as the Python ingest) on every change (at most 4/s) and once a second while monitoring. Nothing is sent when detection is not running.
+- **Stale data is cleared.** `markYoloOffline()` existed but was never called, so the last state (possibly "pedestrian detected") stayed forever. It now runs every second: after 5 s without reports the feed is marked offline and pedestrian state reset, so old detections can never start a cycle. A cycle already running finishes on its own timers.
+- **Monitoring is app-wide.** `useWebcamDetection` lives in `AppLayout` (with its own hidden inference `<video>`), so it keeps running on Settings, Diagnostics and other pages. Logout stops it.
+- **Model warm-up.** The first GPU detection can block the page for seconds; it now runs during "Loading the detection model…", so "Live" means ready.
+- **Diagnostics** shows the browser camera, detection speed and a "Server link" panel (last report, whether the server sees the feed).
+- Removed: `api/yolo.ts`, `MultiCameraGrid`, `LiveStage`, `LiveDetectionPanel`, `BoundingBoxOverlay`, `SystemHealthRail`, and `VITE_YOLO_*` from `frontend/.env.example`. `POST /api/yolo/detection` now validates its body (422 instead of 500). Server recording returns a clear error in production.
+
+**Status (23 October 2026): done.** Backend 35/35 and frontend 21/21 tests, typecheck and production build pass. Full-stack test against a temporary PostgreSQL set up with `db:migrate:prod` + `db:seed:prod` (all 3 migrations, admin created) and the backend in production mode, all checks passed: login; reports accepted (204); server sees the feed and the count; caution started 5.6 s after Live (5 s threshold), dashboard warning light via authenticated Socket.IO; red with countdown; reports continue on Diagnostics; Stop → no reports, server offline and pedestrians cleared within 5 s; logout releases the camera. Phase 2 camera tests re-run with no regressions.
+
+Known issue found (pre-existing, not changed): the live cycle never sets `pedState`, so the dashboard's pedestrian signal stays RED ("Pedestrians Wait") during the red phase instead of showing WALK. Limitation: if two logged-in dashboards monitor at once, both feed the same traffic-light cycle; run monitoring on one computer only.
+
 ---
 
 ## Phase 4: Create the database on Neon

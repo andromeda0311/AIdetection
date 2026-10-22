@@ -42,11 +42,14 @@ export const yoloIngestRateLimiter = createLimiter({
   message: 'YOLO detection ingest rate limit exceeded.',
 });
 
-/** Skip general API limiter for the Python YOLO POST loop. */
+/** Skip the general API limiter for the detection feeds (Python loop and browser reports); they use their own bucket. */
 export function apiRateLimiterUnlessYoloIngest(req: Parameters<RequestHandler>[0], res: Parameters<RequestHandler>[1], next: Parameters<RequestHandler>[2]): void {
   const isYoloIngest =
     req.method === 'POST' &&
-    (req.path === '/yolo/detection' || req.originalUrl.startsWith('/api/yolo/detection'));
+    (req.path === '/yolo/detection' ||
+      req.path === '/live/detection' ||
+      req.originalUrl.startsWith('/api/yolo/detection') ||
+      req.originalUrl.startsWith('/api/live/detection'));
   if (isYoloIngest) {
     next();
     return;

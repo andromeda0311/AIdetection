@@ -279,8 +279,17 @@ export class YoloLiveService {
     if (!this.yoloEnabled) return;
     const staleMs = 5000;
     if (Date.now() - this.lastDetectionAt > staleMs) {
+      if (this.systemState.yolo === 'offline' && this.detectionStartedAt === null) return;
       this.systemState.yolo = 'offline';
       this.systemState.camera = 'offline';
+      // Old detections must not count towards the threshold or start a cycle.
+      // A cycle that is already running finishes on its own timers.
+      this.detectionStartedAt = null;
+      this.systemState.pedestrianDetected = false;
+      this.systemState.pedestrianCount = 0;
+      this.systemState.confidence = 0;
+      this.systemState.detectionDuration = 0;
+      if (!this.trafficCycleActive) this.systemState.cyclePhase = 'IDLE';
       this.systemState.detections = [];
       this.systemState.frameWidth = 0;
       this.systemState.frameHeight = 0;

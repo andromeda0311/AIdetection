@@ -1,8 +1,15 @@
 import type { Request, Response } from 'express';
 import { cameraRecording } from '../services/cameraRecording.service.js';
 import { sendSuccess } from '../utils/response.js';
+import { ApiError } from '../utils/ApiError.js';
+import config from '../config/env.js';
 
 export async function startRecording(req: Request, res: Response): Promise<Response> {
+  // Server recording captures the local Python MJPEG stream (localhost:8000), which only
+  // exists on a development machine. Hosted builds record in the browser instead (Phase 9).
+  if (config.nodeEnv === 'production') {
+    throw ApiError.badRequest('RECORDING_UNAVAILABLE', 'Server-side recording is not available on the hosted server.');
+  }
   const { cameraIndex } = req.body as { cameraIndex?: number };
   const result = await cameraRecording.startRecording(cameraIndex ?? 0);
   return sendSuccess(res, 200, 'Recording started.', result);

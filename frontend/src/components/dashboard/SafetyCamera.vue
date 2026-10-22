@@ -4,7 +4,7 @@ import SafetyIcon from './SafetyIcon.vue';
 import { drawPersonBoxes } from '@/utils/detectionOverlay';
 import type { WebcamDetection } from '@/composables/useWebcamDetection';
 const props = defineProps<{ detection: WebcamDetection; preview: boolean }>();
-const { status, error, devices, deviceId, boxes, frameSize, count, active, detectionsPerSecond } = props.detection;
+const { status, error, devices, deviceId, boxes, frameSize, count, active, detectionsPerSecond, stream } = props.detection;
 
 const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -31,6 +31,12 @@ function redraw() {
   drawPersonBoxes(canvasEl.value, live.value ? boxes.value : [], frameSize.value.width, frameSize.value.height);
 }
 watch([boxes, live], redraw);
+// Detection runs on its own video element; this one only displays the same stream.
+watch([stream, videoEl], ([current, element]) => {
+  if (!element || element.srcObject === current) return;
+  element.srcObject = current;
+  if (current) void element.play().catch(() => undefined);
+}, { immediate: true });
 
 const expanded = ref(false);
 const expandButton = ref<HTMLButtonElement | null>(null);
@@ -38,15 +44,14 @@ function toggleExpanded() { expanded.value = !expanded.value; }
 function onKey(event: KeyboardEvent) { if (event.key === 'Escape' && expanded.value) { expanded.value = false; expandButton.value?.focus(); } }
 let resizeObserver: ResizeObserver | null = null;
 onMounted(() => {
-  props.detection.attach(videoEl.value);
   window.addEventListener('keydown', onKey);
   if (canvasEl.value && 'ResizeObserver' in window) { resizeObserver = new ResizeObserver(redraw); resizeObserver.observe(canvasEl.value); }
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   resizeObserver?.disconnect();
-  props.detection.stop();
-  props.detection.attach(null);
+  // Monitoring continues on other pages; only the display is released.
+  if (videoEl.value) videoEl.value.srcObject = null;
 });
 function onSelectDevice(event: Event) { void props.detection.selectDevice((event.target as HTMLSelectElement).value); }
 </script>
