@@ -5,6 +5,7 @@ import { getErrorMessage } from '@/api/client';
 import type { LiveSystemState } from '@/types';
 import SafetyIcon from '@/components/dashboard/SafetyIcon.vue';
 import { useSafetySettings } from '@/composables/useSafetySettings';
+import { controllerStatusLabel } from '@/utils/controllerStatus';
 import { useTheme } from '@/composables/useTheme';
 import { useDashboardPreferences } from '@/composables/useDashboardPreferences';
 const { dark, toggle } = useTheme();
@@ -70,7 +71,7 @@ async function save() {
       </section>
       <aside class="settings-side-card safety-card">
         <header class="safety-card__header"><h2><SafetyIcon name="nodes" />System connection</h2></header>
-        <div class="settings-form"><span class="settings-connection" :class="{ online: connected }"><i />{{ connected ? 'Telemetry online' : 'Awaiting connection' }}</span><dl><dt>Signal controller</dt><dd>{{ connected ? liveState?.arduino ?? 'Unknown' : 'Offline' }}</dd><dt>Operating mode</dt><dd>{{ connected ? liveState?.mode ?? 'Unknown' : 'Unavailable' }}</dd><dt>Detection confirmation</dt><dd>{{ liveState?.thresholdRequiredSec ?? 5 }} seconds</dd></dl><p class="settings-muted">Controller changes require an active connection and a successful response.</p><RouterLink to="/diagnostics" class="settings-back">View diagnostics<SafetyIcon name="arrow" /></RouterLink></div>
+        <div class="settings-form"><span class="settings-connection" :class="{ online: connected }"><i />{{ connected ? 'Telemetry online' : 'Awaiting connection' }}</span><dl><dt>Signal controller</dt><dd>{{ controllerStatusLabel(connected, liveState) }}</dd><dt>Operating mode</dt><dd>{{ connected ? liveState?.mode ?? 'Unknown' : 'Unavailable' }}</dd><dt>Detection confirmation</dt><dd>{{ liveState?.thresholdRequiredSec ?? 5 }} seconds</dd></dl><p class="settings-muted">Controller changes require an active connection and a successful response.</p><RouterLink to="/diagnostics" class="settings-back">View diagnostics<SafetyIcon name="arrow" /></RouterLink></div>
       </aside>
       <section class="safety-card settings-controller">
         <header class="safety-card__header"><h2><SafetyIcon name="traffic" />Manual mode timers (test cycles and forced phases only)</h2><span class="settings-scope">{{ loaded ? 'Loaded from controller' : 'Unsaved defaults' }}</span></header>

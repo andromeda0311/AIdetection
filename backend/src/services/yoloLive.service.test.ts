@@ -356,6 +356,98 @@ describe('YoloLiveService transition listeners', () => {
   });
 });
 
+describe('YoloLiveService arduino transport in system state', () => {
+  it('reports the configured transport in system:state and /api/system/status data', () => {
+    const { arduino, broadcaster, broadcasts } = createMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+
+    expect(service.getSystemState().arduinoTransport).toBe('log');
+
+    service.setArduinoTransport('serial');
+    expect(service.getSystemState().arduinoTransport).toBe('serial');
+    expect(broadcastsContain(broadcasts, 'serial')).toBe(true);
+  });
+});
+
+function broadcastsContain(broadcasts: Array<Record<string, unknown>>, transport: string): boolean {
+  return broadcasts.some((state) => state.arduinoTransport === transport);
+}
+
+describe('YoloLiveService activity events', () => {
+  afterEach(() => vi.useRealTimers());
+  const noDetection = {
+    timestamp: 0,
+    detected: false,
+    count: 0,
+    detections: [],
+  };
+
+  function activityMocks() {
+    const mocks = createMocks();
+    const events: Array<{ type: string; peopleCount?: number }> = [];
+    return { ...mocks, events };
+  }
+
+  it('emits detected once per false -> true change, with the people count', () => {
+    vi.useFakeTimers();
+    const { arduino, broadcaster, events } = activityMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+    service.onActivity((event) => events.push(event));
+
+    // A person appears.
+    service.handleDetection(detectionPayload());
+    // They stay in the frame: no second event.
+    vi.advanceTimersByTime(1000);
+    service.handleDetection({ ...detectionPayload(), timestamp: Date.now() });
+    // They leave and appear again.
+    service.handleDetection({ ...noDetection, detected: false, timestamp: Date.now() });
+    service.handleDetection({ ...detectionPayload(), count: 3, timestamp: Date.now() });
+
+    expect(events).toEqual([
+      { type: 'detected', peopleCount: 1 },
+      { type: 'detected', peopleCount: 3 },
+    ]);
+
+    service.close();
+  });
+
+  it('emits cycle_started only for automatic cycles, not forced or manual ones', () => {
+    vi.useFakeTimers();
+    const { arduino, broadcaster, events } = activityMocks();
+    const service = new YoloLiveService(arduino, broadcaster, 5000, 3000, 15000);
+    service.onActivity((event) => events.push(event));
+
+    // An automatic cycle starts after the detection threshold.
+    service.handleDetection(detectionPayload());
+    vi.advanceTimersByTime(5000);
+    service.handleDetection({ ...detectionPayload(), timestamp: Date.now() });
+
+    // Forced and manual cycles are admin actions, not traffic-driven ones.
+    service.forcePhase('RED', { triggeredBy: 'admin' });
+    vi.clearAllTimers();
+    events.length = 0;
+    service.forcePhase('RED', { durationMs: 5000, triggeredBy: 'admin' });
+    vi.clearAllTimers();
+    service.runManualCycle({ yellowMs: 2000, redMs: 5000 }, 'admin');
+    vi.clearAllTimers();
+
+    expect(events).toEqual([]);
+
+    // ...but a second automatic cycle is announced again.
+    events.length = 0;
+    service.forcePhase('GREEN', { triggeredBy: 'admin' });
+    vi.clearAllTimers();
+    service.setAutoCycleEnabled(false);
+    service.setAutoCycleEnabled(true);
+    service.handleDetection(detectionPayload());
+    vi.advanceTimersByTime(5000);
+    service.handleDetection({ ...detectionPayload(), timestamp: Date.now() });
+    expect(events).toEqual([{ type: 'cycle_started' }]);
+
+    service.close();
+  });
+});
+
 describe('YoloLiveService YOLO enable toggle', () => {
   beforeEach(() => setYoloEnabled(true));
   afterEach(() => setYoloEnabled(true));

@@ -83,6 +83,7 @@ export interface SystemState {
   yolo: 'online' | 'offline';
   camera: 'online' | 'offline';
   arduino: 'online' | 'offline';
+  arduinoTransport: 'log' | 'serial';
   traffic: 'normal' | 'caution' | 'stopped';
   pedestrianDetected: boolean;
   pedestrianCount: number;
@@ -176,6 +177,11 @@ export interface SystemStateBroadcaster {
   broadcast(state: SystemState): void;
 }
 
+/** Events the engine reports to the persistent activity history (see onActivity). */
+export type ActivityEvent =
+  | { type: 'detected'; peopleCount: number }
+  | { type: 'cycle_started' };
+
 function normalizeDetections(
   detections: YoloDetectionPayload['detections'],
 ): LiveDetectionBox[] {
@@ -222,6 +228,7 @@ function broadcastSignature(state: SystemState): string {
     state.yolo,
     state.camera,
     state.arduino,
+    state.arduinoTransport,
     state.pedestrianDetected,
     state.pedestrianCount,
     state.confidence,
@@ -250,6 +257,7 @@ export class YoloLiveService {
     yolo: 'offline',
     camera: 'offline',
     arduino: 'offline',
+    arduinoTransport: 'log',
     traffic: 'normal',
     pedestrianDetected: false,
     pedestrianCount: 0,
@@ -288,6 +296,7 @@ export class YoloLiveService {
   private lastDetectionAt = 0;
   private lastBroadcastAt = 0;
   private lastBroadcastSignature = '';
+  private activityListeners = new Set<(event: ActivityEvent) => void>();
 
   constructor(
     private readonly arduino: ArduinoCommandSender,
@@ -321,6 +330,9 @@ export class YoloLiveService {
     const now = Date.now();
     // Read live so the admin enable/disable toggle applies without a restart.
     const yoloEnabled = isYoloEnabled();
+    // The activity history wants the moment a person appears; remember the
+    // previous sample before the state is overwritten.
+    const wasPedestrianDetected = this.systemState.pedestrianDetected;
     this.lastDetectionAt = now;
     this.systemState.yolo = yoloEnabled ? 'online' : 'offline';
     this.systemState.camera = yoloEnabled ? 'online' : 'offline';
@@ -340,6 +352,7 @@ export class YoloLiveService {
     this.systemState.thresholdRequiredSec = this.detectionThresholdMs / 1000;
 
     if (payload.detected && yoloEnabled) {
+      if (!wasPedestrianDetected) this.emitActivity({ type: 'detected', peopleCount: payload.count });
       if (this.detectionStartedAt === null) {
         this.detectionStartedAt = now;
       }
@@ -519,6 +532,32 @@ export class YoloLiveService {
     return () => this.transitionListeners.delete(listener);
   }
 
+  /**
+   * Subscribe to the persistent-activity events: a person appearing in front
+   * of the camera and an automatic cycle beginning. Listeners must never block
+   * the light's timing path (DB writes are fire-and-forget on the other side).
+   */
+  onActivity(listener: (event: ActivityEvent) => void): () => void {
+    this.activityListeners.add(listener);
+    return () => this.activityListeners.delete(listener);
+  }
+
+  /** Which Arduino transport the engine was configured with (reported in the live state). */
+  setArduinoTransport(transport: 'log' | 'serial'): void {
+    this.systemState.arduinoTransport = transport;
+    this.maybeBroadcast(Date.now(), false);
+  }
+
+  private emitActivity(event: ActivityEvent): void {
+    for (const listener of this.activityListeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        logger.error({ err }, 'Activity listener failed');
+      }
+    }
+  }
+
   /** Re-read the YOLO enable toggle (no restart needed) and broadcast the change immediately. */
   refreshYoloEnabled(): void {
     if (!isYoloEnabled()) {
@@ -542,6 +581,9 @@ export class YoloLiveService {
   private runSignalSequence(yellowMs: number, redMs: number, triggeredBy: SignalTransitionTrigger): void {
     this.clearCycleTimers();
     this.trafficCycleActive = true;
+    // Forced phases do not come through here; a manual (admin) cycle is not an
+    // automatic one, so the activity history only hears about automated starts.
+    if (triggeredBy === 'auto') this.emitActivity({ type: 'cycle_started' });
     this.systemState.cycleActive = true;
     const yellowSec = Math.ceil(yellowMs / 1000);
     this.systemState.cyclePhase = 'CAUTION';

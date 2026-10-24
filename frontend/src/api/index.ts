@@ -10,6 +10,7 @@ import type {
   ManualTimers,
   StaffUser,
   AuditLog,
+  DetectionActivity,
 } from '../types';
 
 interface Envelope<T> {
@@ -103,6 +104,14 @@ export async function listAuditLogs(
     { params },
   );
   return response.data.data;
+}
+
+/** The most recent stored pedestrian events (server-side, survives a reload). */
+export async function getRecentActivity(limit = 5): Promise<DetectionActivity[]> {
+  const response = await api.get<Envelope<{ items: DetectionActivity[] }>>('/activity/recent', {
+    params: { limit },
+  });
+  return response.data.data.items;
 }
 
 export async function exportAuditLogsCsv(): Promise<void> {

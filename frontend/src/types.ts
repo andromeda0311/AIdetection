@@ -140,6 +140,14 @@ export interface Paginated<T> {
   limit: number;
 }
 
+/** A stored pedestrian event from the server (detection_activity table). */
+export interface DetectionActivity {
+  id: string;
+  occurredAt: string;
+  peopleCount: number;
+  triggeredCycle: boolean;
+}
+
 export interface DetectionListResult {
   detections: Detection[];
   total: number;
@@ -172,6 +180,7 @@ export interface LiveSystemState {
   yolo: 'online' | 'offline';
   camera: 'online' | 'offline';
   arduino: 'online' | 'offline';
+  arduinoTransport?: 'log' | 'serial';
   traffic: 'normal' | 'caution' | 'stopped';
   pedestrianDetected: boolean;
   pedestrianCount: number;

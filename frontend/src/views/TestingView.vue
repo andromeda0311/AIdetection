@@ -3,6 +3,7 @@ import { computed, inject, ref, type Ref } from 'vue';
 import { getLiveSystemStatus } from '@/api/live';
 import { forcePhase, triggerManualCycle } from '@/api';
 import { getErrorMessage } from '@/api/client';
+import { controllerStatusLabel } from '@/utils/controllerStatus';
 import type { LiveSystemState } from '@/types';
 import AppButton from '@/components/ui/AppButton.vue';
 const { liveState, connected } = inject<{ liveState: Ref<LiveSystemState | null>; connected: Ref<boolean> }>('operationsState')!;
@@ -23,7 +24,7 @@ async function run(kind: 'status' | 'cycle' | 'walk') {
   active.value = label;
   try {
     let detail = commandDetail();
-    if (kind === 'status') { const state = await getLiveSystemStatus(); liveState.value = state; detail = 'Camera: ' + state.camera + '; Detection: ' + state.yolo + '; Controller: ' + state.arduino; }
+    if (kind === 'status') { const state = await getLiveSystemStatus(); liveState.value = state; detail = 'Camera: ' + state.camera + '; Detection: ' + state.yolo + '; Controller: ' + controllerStatusLabel(connected.value, state); }
     else if (kind === 'cycle') await triggerManualCycle();
     else await forcePhase('RED');
     results.value.unshift({ timestamp: new Date().toISOString(), routine: label, result: kind === 'status' ? 'Checked' : 'Accepted', detail });

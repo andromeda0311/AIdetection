@@ -1,10 +1,12 @@
 import config from '../config/env.js';
+import { logger } from '../utils/logger.js';
 import { createArduinoController } from './arduinoLive.service.js';
 import {
   YoloLiveService,
   createSocketIoBroadcaster,
   type SystemStateBroadcaster,
 } from './yoloLive.service.js';
+import { recordDetection, markCycleTriggered } from './detectionActivity.service.js';
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 import { loadFromEnv, isYoloEnabled, setYoloEnabled, toggleYolo } from './yoloEnabled.js';
@@ -48,6 +50,24 @@ export const yoloLive = new YoloLiveService(
   config.yoloLive.yellowDurationMs,
   config.yoloLive.stopDurationMs,
 );
+
+// The live state must say which Arduino transport the engine was configured
+// with, so the website can report "not connected (log mode)" honestly.
+yoloLive.setArduinoTransport(config.yoloLive.arduinoTransport);
+
+// Lasting detection history: engine events become rows in detection_activity.
+// The writes are fire-and-forget — the light's timing path never awaits them.
+yoloLive.onActivity((event) => {
+  if (event.type === 'detected') {
+    recordDetection(event.peopleCount).catch((err) =>
+      logger.error({ err }, 'Failed to record detection activity'),
+    );
+  } else {
+    markCycleTriggered().catch((err) =>
+      logger.error({ err }, 'Failed to mark the cycle trigger in the detection activity'),
+    );
+  }
+});
 
 // When the detection feed (dashboard browser or Python) goes quiet, mark it offline
 // and drop the stale pedestrian state.

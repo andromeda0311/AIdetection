@@ -5,14 +5,13 @@ import { getSharedArduinoSerial } from './arduinoSerial.shared.js';
 
 /** Writes high-level traffic commands to the console when no hardware is attached. */
 export class LogArduinoController implements ArduinoCommandSender {
-  private status: 'online' | 'offline' = 'online';
-
   send(command: ArduinoCommand): void {
     logger.info({ command }, 'Arduino command');
   }
 
+  /** It is not a device: the controller must never report itself online. */
   getStatus(): 'online' | 'offline' {
-    return this.status;
+    return 'offline';
   }
 
   async close(): Promise<void> {

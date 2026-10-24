@@ -7,6 +7,7 @@ import { RefreshToken } from '../entities/RefreshToken.js';
 import { Detection } from '../entities/Detection.js';
 import { DetectionFrame } from '../entities/DetectionFrame.js';
 import { TrafficLightAuditLog } from '../entities/TrafficLightAuditLog.js';
+import { DetectionActivity } from '../entities/DetectionActivity.js';
 import config from './env.js';
 import { fileURLToPath } from 'node:url';
 
@@ -19,7 +20,7 @@ export const AppDataSource = new DataSource({
   url: config.databaseUrl,
   synchronize: false,
   logging: config.nodeEnv === 'development',
-  entities: [SignalEvent, SignalConfig, StaffUser, RefreshToken, Detection, DetectionFrame, TrafficLightAuditLog],
+  entities: [SignalEvent, SignalConfig, StaffUser, RefreshToken, Detection, DetectionFrame, TrafficLightAuditLog, DetectionActivity],
   migrations: [migrationsPath],
   subscribers: [],
   ...(config.dbSsl ? { ssl: { rejectUnauthorized: true } } : {}),

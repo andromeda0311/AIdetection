@@ -145,6 +145,8 @@ Code for 0.4–0.11 is done and tested; it goes live once the two proxy secrets 
 
 **Done when:** Diagnostics on the cloud server shows the controller as not connected; reloading the dashboard keeps the recent activity.
 
+**Status (24 October 2026): done, needs a migration before deploy.** `LogArduinoController` (the `log` transport) now reports itself offline, and the live state carries `arduinoTransport` (`system:state` and `GET /api/system/status`), so Diagnostics, System Settings and System Testing show "Not connected (log mode)" in log mode and "online" only while a serial controller answers. The Diagnostics countdown card shows "idle" (neutral chip style) while the connection is up but no timer runs. Detection history is stored in `detection_activity` (migration `1724560000004-AddDetectionActivity`): the engine reports "a person appeared" (false→true) and "an automatic cycle started" to `detectionActivity.service` (fire-and-forget; rows older than 30 days are pruned at most once an hour), `GET /api/activity/recent` (login required, `limit` 1–50, default 5, 422 invalid) returns the newest rows, and the dashboard loads them on mount and again ~1 s after each new detection or cycle — they survive a reload now. Verified in the browser (log transport, as on Render): Diagnostics and Settings show "Not connected (log mode)"; the countdown card is idle with no cycle and online with seconds during red; a detection appears on the dashboard, is marked as triggering the cycle, and is still listed after a reload and after a backend restart; 30 s of continuous detection created one row. **Before deploying, run `npm run db:migrate:prod` against Neon.**
+
 ## Phase 5: Missing screens and cleanup
 
 | Item | Decide / do |

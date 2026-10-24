@@ -6,6 +6,7 @@ import SafetySignal from '@/components/dashboard/SafetySignal.vue';
 import PedestrianTrend from '@/components/dashboard/PedestrianTrend.vue';
 import { useSafetySettings } from '@/composables/useSafetySettings';
 import { useDashboardPreferences } from '@/composables/useDashboardPreferences';
+import { useRecentActivity } from '@/composables/useRecentActivity';
 import type { WebcamDetection } from '@/composables/useWebcamDetection';
 import { authDisabled } from '@/utils/preview';
 import type { LiveSystemState } from '@/types';
@@ -15,7 +16,6 @@ const preview = computed(() => authDisabled && !liveState.value);
 // People are detected in this browser from the local webcam; null means detection is not running.
 const detection = inject<WebcamDetection>('webcamDetection')!;
 const count = computed(() => preview.value && detection.status.value === 'idle' ? 1 : detection.count.value);
-const pedestrianInView = computed(() => (detection.count.value ?? 0) > 0);
 const countDialog = ref<HTMLDialogElement | null>(null);
 function expandCount() { countDialog.value?.showModal(); }
 const timerTarget = ref<'pedestrian' | 'vehicle'>('pedestrian');
@@ -41,12 +41,15 @@ const timingValue = (key: 'detection' | 'warning' | 'red') => {
 };
 const { adjustmentsVisible, setAdjustmentsVisible } = useDashboardPreferences();
 const sampleActivity = ['03:24:12 PM', '03:23:45 PM', '03:22:18 PM', '03:20:56 PM', '03:19:32 PM'].map((time, index) => ({ id: 'sample-' + index, time, event: 'Pedestrian detected', triggered: true }));
-const recentActivity = ref<Array<{ id: string; time: string; event: string; triggered: boolean }>>([]);
+// The activity history lives on the server (detection_activity table): loaded
+// on mount and after each new detection or automatic cycle, so it survives a
+// reload instead of existing only in this browser session.
+const { rows: recentActivity, failed: activityFailed, refresh: refreshActivity, notifyActivity } = useRecentActivity();
 const activity = computed(() => preview.value ? sampleActivity : recentActivity.value);
-watch(() => [pedestrianInView.value, liveState.value?.cycleActive] as const, ([detected, cycle], previous) => {
-  if (detected && !previous?.[0]) recentActivity.value.unshift({ id: String(Date.now()), time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }), event: 'Pedestrian detected', triggered: Boolean(cycle) });
-  else if (cycle && !previous?.[1] && recentActivity.value[0]) recentActivity.value[0].triggered = true;
-  recentActivity.value = recentActivity.value.slice(0, 5);
+onMounted(() => { void refreshActivity(); });
+watch(() => [liveState.value?.pedestrianDetected ?? false, liveState.value?.cycleActive ?? false] as const, ([detected, cycle], previous) => {
+  if (!previous) return;
+  if ((detected && !previous[0]) || (cycle && !previous[1])) notifyActivity();
 });
 const mobilePanel = ref<'camera' | 'status' | 'adjustments' | 'activity'>('camera');
 const mobilePanels = ['camera', 'status', 'adjustments', 'activity'] as const;
@@ -75,7 +78,7 @@ async function toggleControls() {
     </div>
     <div class="safety-bottom-grid">
       <section class="safety-card adjustments-card" :class="{ 'adjustments-card--collapsed': !adjustmentsVisible }"><header class="safety-card__header"><h2><SafetyIcon name="settings" />System Adjustments</h2><button ref="hideControlsButton" type="button" class="adjustments-toggle" :aria-expanded="adjustmentsVisible" aria-controls="dashboard-adjustments-form" @click="toggleControls">{{ adjustmentsVisible ? 'Hide settings' : 'Show settings' }}</button></header><div v-show="adjustmentsVisible" id="dashboard-adjustments-form" class="safety-adjustments"><div class="adjustment-fields"><div v-for="field in fields" :key="field.key"><label :for="'safety-' + field.key">{{ field.label }}</label><output :id="'safety-' + field.key" class="adjustment-value" :aria-describedby="'help-' + field.key">{{ timingValue(field.key) }} s</output><small :id="'help-' + field.key">{{ field.help }}</small></div></div><div class="settings-save-row"><RouterLink class="save-safety-settings adjustments-link" to="/settings"><SafetyIcon name="settings" />Change in Settings</RouterLink><span v-if="timingsLoadFailed" class="save-feedback error" role="status">Timings are unavailable.</span></div></div></section>
-      <section class="safety-card activity-card"><header class="safety-card__header"><h2><SafetyIcon name="document" />Recent Detection Activity</h2></header><div class="safety-activity-table"><table><thead><tr><th>Time</th><th>Event</th><th>Status</th></tr></thead><tbody><tr v-for="row in activity" :key="row.id"><td>{{ row.time }}</td><td>{{ row.event }}</td><td><span class="activity-status"><i :class="{ pending: !row.triggered }" />{{ row.triggered ? 'Triggered traffic light sequence' : 'Detection confirmation pending' }}</span></td></tr><tr v-if="!activity.length"><td colspan="3" class="activity-empty">Detection events will appear during this monitoring session.</td></tr></tbody></table></div></section>
+      <section class="safety-card activity-card"><header class="safety-card__header"><h2><SafetyIcon name="document" />Recent Detection Activity</h2></header><div class="safety-activity-table"><table><thead><tr><th>Time</th><th>Event</th><th>Status</th></tr></thead><tbody><tr v-for="row in activity" :key="row.id"><td>{{ row.time }}</td><td>{{ row.event }}</td><td><span class="activity-status"><i :class="{ pending: !row.triggered }" />{{ row.triggered ? 'Triggered traffic light sequence' : 'Detection confirmation pending' }}</span></td></tr><tr v-if="!activity.length"><td colspan="3" class="activity-empty">{{ activityFailed ? 'Activity unavailable.' : 'No detections recorded yet.' }}</td></tr></tbody></table></div></section>
     </div>
     <section class="safety-card system-process"><h2><SafetyIcon name="nodes" />System Process</h2><div class="process-step"><span class="process-icon"><SafetyIcon name="video" /></span><div><strong>Webcam</strong><p>Captures live video feed</p></div></div><SafetyIcon name="arrow" class="process-arrow" /><div class="process-step"><span class="process-icon"><SafetyIcon name="brain" /></span><div><strong>Pedestrian Detection</strong><p>AI in the browser detects pedestrians</p></div></div><SafetyIcon name="arrow" class="process-arrow" /><div class="process-step"><span class="process-icon"><SafetyIcon name="traffic" /></span><div><strong>Traffic-Light Sequence</strong><p>Triggers traffic light response</p></div></div></section>
     <dialog ref="countDialog" class="pedestrian-count-dialog" aria-labelledby="pedestrian-trend-title" @click="($event.target === countDialog) && countDialog?.close()"><section class="count-expanded-card"><header class="count-expanded-header"><div><h2 id="pedestrian-trend-title">Pedestrian Count</h2><p>People detected over the last 60 seconds</p></div><button type="button" class="camera-expand" aria-label="Close pedestrian count" @click="countDialog?.close()"><SafetyIcon name="close" /></button></header><div class="count-expanded-body"><div class="count-expanded-current"><strong>{{ count ?? '—' }}</strong><span>People currently in view</span></div><PedestrianTrend :count="count" :preview="preview" /><p class="count-expanded-note">This chart shows visible detections. Unique completed crossings are not measured.</p></div></section></dialog>
