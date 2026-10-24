@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TrafficSignalMachine } from './trafficSignal.service.js';
+import { TrafficSignalMachine, initTrafficSignal, trafficSignal } from './trafficSignal.service.js';
 import { YoloLiveService, type ArduinoCommandSender, type SystemStateBroadcaster } from './yoloLive.service.js';
 import { ArduinoTransportEnum } from '../entities/TrafficLightAuditLog.js';
 import { SignalStateEnum, TriggeredByEnum } from '../entities/SignalEvent.js';
@@ -22,6 +22,9 @@ const yoloInstance = vi.hoisted(() => ({
   yoloLiveStub: {
     setSignalStateProvider: vi.fn(),
     onTransition: vi.fn(() => () => undefined),
+    setAutoCycleEnabled: vi.fn(),
+    refreshSignalState: vi.fn(),
+    setDurations: vi.fn(),
   },
 }));
 
@@ -200,13 +203,15 @@ describe('TrafficSignalMachine', () => {
     );
   });
 
-  it('syncs manual red timers into the live engine durations', async () => {
+  it('does not copy manual timers into the automatic engine durations', async () => {
     const { engine } = createEngine();
     const machine = createMachine(engine);
 
     await machine.setManualTimers({ redMs: 9000 });
     expect(machine.getManualTimers().redMs).toBe(9000);
-    expect(engine.getSystemState().autoStopSec).toBe(9);
+    // The automatic red time comes only from signal_config.redMs (updateOptions).
+    expect(engine.getSystemState().autoStopSec).toBe(15);
+    expect(yoloInstance.yoloLiveStub.setDurations).not.toHaveBeenCalled();
   });
 
   it('updates the recorded mode and manual timers on the engine status card', async () => {
@@ -219,5 +224,65 @@ describe('TrafficSignalMachine', () => {
     const state = engine.getSystemState();
     expect(state.mode).toBe('manual');
     expect(state.manualTimers).toEqual({ greenMs: 10000, yellowMs: 2000, redMs: 12000, pedWalkMs: 8000 });
+  });
+
+  it('persists new automatic timings and applies them to the engine at once', async () => {
+    const { engine } = createEngine();
+    const machine = createMachine(engine);
+
+    await machine.updateOptions({ detectionThresholdMs: 8000, yellowMs: 4000, redMs: 25000 });
+
+    // Only the automatic-cycle columns are written.
+    expect(signalConfig.upsertConfig).toHaveBeenCalledWith({
+      detectionThresholdMs: 8000,
+      yellowMs: 4000,
+      redMs: 25000,
+    });
+    // The live state reflects the new values right away; a running cycle keeps its timing.
+    const state = engine.getSystemState();
+    expect(state.thresholdRequiredSec).toBe(8);
+    expect(state.autoStopSec).toBe(25);
+  });
+
+  it('keeps the current value when a timing is undefined (row saved before the detection column)', async () => {
+    const { engine } = createEngine();
+    const machine = createMachine(engine);
+    await machine.updateOptions({ detectionThresholdMs: 6000 });
+
+    await machine.updateOptions({ detectionThresholdMs: undefined, yellowMs: 2000 });
+
+    expect(machine.getOptions().detectionThresholdMs).toBe(6000);
+    expect(signalConfig.upsertConfig).toHaveBeenLastCalledWith(expect.objectContaining({ detectionThresholdMs: 6000, yellowMs: 2000 }));
+    expect(engine.getSystemState().thresholdRequiredSec).toBe(6);
+  });
+
+  it('applies the saved timings on startup so they survive a restart', async () => {
+    signalConfig.getConfig.mockResolvedValueOnce({
+      detectionThresholdMs: 7000,
+      yellowMs: 2500,
+      redMs: 22000,
+      mode: 'auto',
+      manualGreenMs: null,
+      manualYellowMs: null,
+      manualRedMs: null,
+      manualPedWalkMs: null,
+    });
+
+    signalConfig.upsertConfig.mockClear();
+    await initTrafficSignal();
+
+    expect(signalConfig.upsertConfig).toHaveBeenCalledWith({
+      detectionThresholdMs: 7000,
+      yellowMs: 2500,
+      redMs: 22000,
+    });
+    // The engine receives the persisted timings in its setDurations shape.
+    expect(yoloInstance.yoloLiveStub.setDurations).toHaveBeenCalledWith({
+      detectionThresholdMs: 7000,
+      yellowDurationMs: 2500,
+      stopDurationMs: 22000,
+    });
+    // The machine reports the persisted effective values.
+    expect(trafficSignal.getOptions()).toEqual({ detectionThresholdMs: 7000, yellowMs: 2500, redMs: 22000 });
   });
 });

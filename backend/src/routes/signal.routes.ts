@@ -15,6 +15,8 @@ import {
 } from '../controllers/signal.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
+import { validate } from '../middleware/validate.js';
+import { updateSignalConfigSchema } from '../dto/signal.dto.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { SignalStateEnum } from '../entities/SignalEvent.js';
 
@@ -26,7 +28,7 @@ router.get('/status', asyncHandler(getSignalStatus));
 router.get('/events', asyncHandler(getSignalEvents));
 router.get('/events/export', authorize('admin'), asyncHandler(exportSignalEvents));
 router.get('/config', authorize('admin'), asyncHandler(getSignalConfig));
-router.put('/config', authorize('admin'), asyncHandler(updateSignalConfig));
+router.put('/config', authorize('admin'), validate(updateSignalConfigSchema), asyncHandler(updateSignalConfig));
 
 router.post('/green', authorize('admin'), asyncHandler(forceState(SignalStateEnum.GREEN)));
 router.post('/yellow', authorize('admin'), asyncHandler(forceState(SignalStateEnum.YELLOW)));

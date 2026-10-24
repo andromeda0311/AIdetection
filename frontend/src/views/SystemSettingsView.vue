@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, type Ref } from 'vue';
+import { inject, onMounted, ref, type Ref } from 'vue';
 import { getManualTimers, setManualTimers } from '@/api';
 import { getErrorMessage } from '@/api/client';
 import type { LiveSystemState } from '@/types';
@@ -9,11 +9,24 @@ import { useTheme } from '@/composables/useTheme';
 import { useDashboardPreferences } from '@/composables/useDashboardPreferences';
 const { dark, toggle } = useTheme();
 const { adjustmentsVisible, setAdjustmentsVisible } = useDashboardPreferences();
-const { settings, fields: preferenceFields, saveMessage, saveFailed, dirty, saveSettings, resetDefaults, discard } = useSafetySettings();
+const {
+  settings,
+  fields: preferenceFields,
+  loading: timingsLoading,
+  loadFailed: timingsLoadFailed,
+  saving: timingsSaving,
+  message: saveMessage,
+  messageFailed: saveFailed,
+  dirty,
+  loadTimings,
+  saveSettings,
+  resetDefaults,
+  discard,
+} = useSafetySettings();
+onMounted(loadTimings);
 const { liveState, connected } = inject<{ liveState: Ref<LiveSystemState | null>; connected: Ref<boolean> }>('operationsState')!;
 const green = ref(30); const yellow = ref(3); const red = ref(20);
 const loaded = ref(false); const saving = ref(false); const message = ref(''); const failed = ref(false);
-const total = computed(() => Number(green.value) + Number(yellow.value) + Number(red.value));
 const fields = [{ name: 'Vehicle green', model: green, min: 5, max: 300, color: 'green' }, { name: 'Yellow caution', model: yellow, min: 1, max: 60, color: 'amber' }, { name: 'Pedestrian clearance / Red', model: red, min: 5, max: 300, color: 'red' }];
 onMounted(async () => {
   try { const timers = await getManualTimers(); green.value = timers.greenMs / 1000; yellow.value = timers.yellowMs / 1000; red.value = timers.redMs / 1000; loaded.value = true; }
@@ -43,15 +56,15 @@ async function save() {
     </section>
     <div class="settings-page-grid">
       <section class="safety-card preferences-card">
-        <header class="safety-card__header"><h2><SafetyIcon name="settings" />Detection &amp; crossing preferences</h2><span class="settings-scope">This device</span></header>
+        <header class="safety-card__header"><h2><SafetyIcon name="settings" />Automatic cycle timings</h2><span class="settings-scope">Saved on server</span></header>
         <form class="settings-form" @submit.prevent="saveSettings">
-          <p class="settings-note"><SafetyIcon name="info" />These preferences are shared with System Adjustments on your dashboard. They are saved in this browser; controller timings are managed separately below.</p>
+          <p class="settings-note"><SafetyIcon name="info" />These timings drive the automatic traffic cycle for every device. The new values apply from the next cycle after saving; manual timers below do not affect the automatic cycle.</p>
           <div class="settings-preference-fields"><div v-for="field in preferenceFields" :key="field.key" class="settings-field">
             <label :for="'preference-' + field.key">{{ field.label }}</label>
-            <div class="settings-number"><input :id="'preference-' + field.key" v-model.number="settings[field.key]" type="number" min="1" max="300" step="1" required :aria-describedby="'preference-help-' + field.key" /><span>seconds</span></div>
-            <small :id="'preference-help-' + field.key">{{ field.help }}</small>
+            <div class="settings-number"><input :id="'preference-' + field.key" v-model.number="settings[field.key]" type="number" :min="field.min" :max="field.max" step="1" required :disabled="timingsLoading || timingsLoadFailed" :aria-describedby="'preference-help-' + field.key" /><span>seconds</span></div>
+            <small :id="'preference-help-' + field.key">{{ field.min }}–{{ field.max }} seconds. {{ field.help }}</small>
           </div></div>
-          <div class="settings-actions"><button type="submit" class="save-safety-settings" :disabled="!dirty"><SafetyIcon name="save" />Save Settings</button><button type="button" class="settings-secondary" :disabled="!dirty" @click="discard">Discard changes</button><button type="button" class="settings-reset" @click="resetDefaults"><SafetyIcon name="reset" />Restore defaults</button></div>
+          <div class="settings-actions"><button type="submit" class="save-safety-settings" :disabled="timingsLoadFailed || timingsLoading || timingsSaving || !dirty"><SafetyIcon name="save" />{{ timingsSaving ? 'Saving…' : 'Save Settings' }}</button><button type="button" class="settings-secondary" :disabled="timingsLoadFailed || timingsLoading || timingsSaving || !dirty" @click="discard">Discard changes</button><button type="button" class="settings-reset" :disabled="timingsLoadFailed || timingsLoading" @click="resetDefaults"><SafetyIcon name="reset" />Restore defaults</button></div>
           <p v-if="saveMessage" class="settings-feedback" :class="{ error: saveFailed }" role="status">{{ saveMessage }}</p>
         </form>
       </section>
@@ -60,9 +73,9 @@ async function save() {
         <div class="settings-form"><span class="settings-connection" :class="{ online: connected }"><i />{{ connected ? 'Telemetry online' : 'Awaiting connection' }}</span><dl><dt>Signal controller</dt><dd>{{ connected ? liveState?.arduino ?? 'Unknown' : 'Offline' }}</dd><dt>Operating mode</dt><dd>{{ connected ? liveState?.mode ?? 'Unknown' : 'Unavailable' }}</dd><dt>Detection confirmation</dt><dd>{{ liveState?.thresholdRequiredSec ?? 5 }} seconds</dd></dl><p class="settings-muted">Controller changes require an active connection and a successful response.</p><RouterLink to="/diagnostics" class="settings-back">View diagnostics<SafetyIcon name="arrow" /></RouterLink></div>
       </aside>
       <section class="safety-card settings-controller">
-        <header class="safety-card__header"><h2><SafetyIcon name="traffic" />Controller signal timings</h2><span class="settings-scope">{{ loaded ? 'Loaded from controller' : 'Unsaved defaults' }}</span></header>
+        <header class="safety-card__header"><h2><SafetyIcon name="traffic" />Manual mode timers (test cycles and forced phases only)</h2><span class="settings-scope">{{ loaded ? 'Loaded from controller' : 'Unsaved defaults' }}</span></header>
         <form class="settings-form" @submit.prevent="save">
-          <p class="settings-muted">Apply signal durations to the connected controller. Current form cycle: <strong>{{ total }} seconds</strong>.</p>
+          <p class="settings-muted">These timers only run the manual test cycles and forced phases; the automatic red time is set under Automatic cycle timings.</p>
           <div class="settings-controller-fields"><div v-for="(field, index) in fields" :key="field.name" class="settings-field"><label :for="'duration-' + index">{{ field.name }}</label><div class="settings-number"><input :id="'duration-' + index" v-model.number="field.model.value" type="number" :min="field.min" :max="field.max" step="1" required /><span>seconds</span></div><small>{{ field.min }}–{{ field.max }} seconds</small></div></div>
           <div class="settings-actions"><button type="submit" class="save-safety-settings" :disabled="!connected || saving"><SafetyIcon name="save" />{{ saving ? 'Applying…' : 'Apply to Controller' }}</button><button type="button" class="settings-reset" @click="defaults"><SafetyIcon name="reset" />Restore defaults</button></div>
           <p v-if="message" class="settings-feedback" :class="{ error: failed }" role="status">{{ message }}</p>

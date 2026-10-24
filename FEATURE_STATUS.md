@@ -133,6 +133,7 @@ Code for 0.4–0.11 is done and tested; it goes live once the two proxy secrets 
 **Fix.** Store the live-cycle timings on the server (`signal_config`), editable by admins only, applied with `yoloLive.setDurations`; show them read-only to staff. Remove the duplicate browser-only form. Change the System Testing result text so it does not claim a physical controller accepted the command when none is connected.
 
 **Done when:** changing the detection time in Settings changes how long a person must be seen before the caution phase, for every browser, after a reload.
+**Status (24 October 2026): done, needs a migration before deploy.** The three automatic-cycle timings (detection time, warning light, red / pedestrian crossing) are stored in `signal_config` (new column `detection_threshold_ms`, migration `1724560000003-AddDetectionThreshold`), edited only by the admin in Settings via `PUT /api/signal/config` (validated, 422 on bad input), applied to the live engine at once and again at startup. Environment values are only defaults. The browser-only form is gone; the dashboard shows the values read-only with a link to Settings. Manual timers affect only manual test cycles and forced phases. System Testing says when no physical controller is connected. Verified in two browsers: saved values show on the second device and after a reload; with detection 8 s the caution phase started 8.5 s after people were seen, with 2 s after 2.4 s. **Before deploying, run `npm run db:migrate:prod` against Neon.**
 
 ## Phase 4: Honest status and lasting history
 

@@ -4,6 +4,7 @@ import { SignalConfig } from '../entities/SignalConfig.js';
 const repo = () => AppDataSource.getRepository(SignalConfig);
 
 export interface SignalConfigData {
+  detectionThresholdMs?: number | null;
   yellowMs: number;
   redMs: number;
   mode?: 'auto' | 'manual';

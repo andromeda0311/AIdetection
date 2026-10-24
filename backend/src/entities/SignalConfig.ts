@@ -5,6 +5,10 @@ export class SignalConfig {
   @PrimaryColumn({ type: 'int' })
   id!: number; // always 1
 
+  /** How long a person must be seen before the caution phase; null = env default. */
+  @Column({ name: 'detection_threshold_ms', type: 'int', nullable: true })
+  detectionThresholdMs!: number | null;
+
   @Column({ name: 'yellow_ms', type: 'int' })
   yellowMs!: number;
 

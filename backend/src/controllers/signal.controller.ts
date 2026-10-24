@@ -4,7 +4,7 @@ import { trafficSignal } from '../services/trafficSignal.service.js';
 import { listSignalEvents } from '../models/SignalEvent.js';
 import { sendSuccess } from '../utils/response.js';
 import { SignalStateEnum } from '../entities/SignalEvent.js';
-import { getConfig } from '../models/SignalConfig.js';
+import type { SignalOptions } from '../services/trafficSignal.service.js';
 
 export async function getSignalStatus(_req: Request, res: Response): Promise<Response> {
   return sendSuccess(res, 200, 'Signal status.', {
@@ -27,30 +27,43 @@ export function forceState(state: SignalStateEnum) {
   };
 }
 
-export async function getSignalConfig(_req: Request, res: Response): Promise<Response> {
-  const cfg = await getConfig();
+ /**
+  * The automatic-cycle timings (defaults filled in by the machine) plus the
+  * operating mode and manual timers. Both GET and PUT answer with this shape.
+  */
+function signalConfigPayload() {
   const opts = trafficSignal.getOptions();
-  if (!cfg) {
-    return sendSuccess(res, 200, 'Signal config (defaults).', { yellowMs: opts.yellowMs, redMs: opts.redMs });
-  }
-  return sendSuccess(res, 200, 'Signal config.', {
-    yellowMs: cfg.yellowMs,
-    redMs: cfg.redMs,
-    mode: cfg.mode,
-    manualGreenMs: cfg.manualGreenMs,
-    manualYellowMs: cfg.manualYellowMs,
-    manualRedMs: cfg.manualRedMs,
-    manualPedWalkMs: cfg.manualPedWalkMs,
-  });
+  const manual = trafficSignal.getManualTimers();
+  return {
+    detectionThresholdMs: opts.detectionThresholdMs,
+    yellowMs: opts.yellowMs,
+    redMs: opts.redMs,
+    mode: trafficSignal.getMode(),
+    manualGreenMs: manual.greenMs,
+    manualYellowMs: manual.yellowMs,
+    manualRedMs: manual.redMs,
+    manualPedWalkMs: manual.pedWalkMs,
+  };
+}
+
+export async function getSignalConfig(_req: Request, res: Response): Promise<Response> {
+  return sendSuccess(res, 200, 'Signal config.', signalConfigPayload());
 }
 
 export async function updateSignalConfig(req: Request, res: Response): Promise<Response> {
-  const { yellowMs, redMs } = req.body as { yellowMs?: number; redMs?: number };
-  if (yellowMs === undefined && redMs === undefined) {
-    return sendSuccess(res, 400, 'Provide yellowMs and/or redMs.');
-  }
-  await trafficSignal.updateOptions({ yellowMs, redMs });
-  return sendSuccess(res, 200, 'Signal config updated.', trafficSignal.getStatus());
+  // The route validation guarantees at least one timing is present and within
+  // range; this handler persists the subset and applies it to the engine.
+  const { detectionThresholdMs, yellowMs, redMs } = req.body as {
+    detectionThresholdMs?: number;
+    yellowMs?: number;
+    redMs?: number;
+  };
+  const timings: Partial<SignalOptions> = {};
+  if (detectionThresholdMs !== undefined) timings.detectionThresholdMs = detectionThresholdMs;
+  if (yellowMs !== undefined) timings.yellowMs = yellowMs;
+  if (redMs !== undefined) timings.redMs = redMs;
+  await trafficSignal.updateOptions(timings);
+  return sendSuccess(res, 200, 'Signal config updated.', signalConfigPayload());
 }
 
 // Mode endpoints

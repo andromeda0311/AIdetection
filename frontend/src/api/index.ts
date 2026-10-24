@@ -145,17 +145,26 @@ export async function triggerManualCycle(): Promise<SignalStatus> {
   return response.data.data;
 }
 
+/** The automatic-cycle timings of the live signal engine plus the mode and manual timers (ms). */
 export interface SignalConfig {
+  detectionThresholdMs: number;
   yellowMs: number;
   redMs: number;
+  mode: SignalMode;
+  manualGreenMs: number | null;
+  manualYellowMs: number | null;
+  manualRedMs: number | null;
+  manualPedWalkMs: number | null;
 }
+
+export type SignalTimingUpdate = Partial<Pick<SignalConfig, 'detectionThresholdMs' | 'yellowMs' | 'redMs'>>;
 
 export async function getSignalConfig(): Promise<SignalConfig> {
   const response = await api.get<Envelope<SignalConfig>>('/signal/config');
   return response.data.data;
 }
 
-export async function updateSignalConfig(payload: Partial<SignalConfig>): Promise<SignalConfig> {
+export async function updateSignalConfig(payload: SignalTimingUpdate): Promise<SignalConfig> {
   const response = await api.put<Envelope<SignalConfig>>('/signal/config', payload);
   return response.data.data;
 }

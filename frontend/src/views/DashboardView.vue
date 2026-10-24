@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, ref, watch, type Ref } from 'vue';
+import { computed, inject, nextTick, onMounted, ref, watch, type Ref } from 'vue';
 import SafetyIcon from '@/components/dashboard/SafetyIcon.vue';
 import SafetyCamera from '@/components/dashboard/SafetyCamera.vue';
 import SafetySignal from '@/components/dashboard/SafetySignal.vue';
@@ -30,7 +30,15 @@ const vehicleSignal = computed<'red' | 'yellow' | 'green' | 'offline'>(() => pre
 const pedestrianSignal = computed<'red' | 'green' | 'offline'>(() => preview.value ? 'green' : !connected.value ? 'offline' : liveState.value?.pedState === 'WALK' ? 'green' : 'red');
 const warningActive = computed(() => preview.value || Boolean(connected.value && liveState.value?.traffic === 'caution'));
 
-const { settings, fields, saveMessage, saveFailed, saveSettings } = useSafetySettings();
+// The three automatic-cycle timings are server values; the dashboard shows
+// them read-only and links to Settings where an admin can change them.
+const { settings, fields, loadFailed: timingsLoadFailed, loading: timingsLoading, loadTimings } = useSafetySettings();
+onMounted(loadTimings);
+const timingValue = (key: 'detection' | 'warning' | 'red') => {
+  if (timingsLoading.value) return '…';
+  if (timingsLoadFailed.value) return '—';
+  return settings.value[key];
+};
 const { adjustmentsVisible, setAdjustmentsVisible } = useDashboardPreferences();
 const sampleActivity = ['03:24:12 PM', '03:23:45 PM', '03:22:18 PM', '03:20:56 PM', '03:19:32 PM'].map((time, index) => ({ id: 'sample-' + index, time, event: 'Pedestrian detected', triggered: true }));
 const recentActivity = ref<Array<{ id: string; time: string; event: string; triggered: boolean }>>([]);
@@ -66,7 +74,7 @@ async function toggleControls() {
       </div>
     </div>
     <div class="safety-bottom-grid">
-      <section class="safety-card adjustments-card" :class="{ 'adjustments-card--collapsed': !adjustmentsVisible }"><header class="safety-card__header"><h2><SafetyIcon name="settings" />System Adjustments</h2><button ref="hideControlsButton" type="button" class="adjustments-toggle" :aria-expanded="adjustmentsVisible" aria-controls="dashboard-adjustments-form" @click="toggleControls">{{ adjustmentsVisible ? 'Hide settings' : 'Show settings' }}</button></header><form v-show="adjustmentsVisible" id="dashboard-adjustments-form" class="safety-adjustments" @submit.prevent="saveSettings"><div class="adjustment-fields"><div v-for="field in fields" :key="field.key"><label :for="'safety-' + field.key">{{ field.label }}</label><input :id="'safety-' + field.key" v-model.number="settings[field.key]" type="number" min="1" max="300" step="1" required :aria-describedby="'help-' + field.key" /><small :id="'help-' + field.key">{{ field.help }}</small></div></div><div class="settings-save-row"><button type="submit" class="save-safety-settings"><SafetyIcon name="save" />Save Settings</button><span v-if="saveMessage" class="save-feedback" :class="{ error: saveFailed }" role="status">{{ saveMessage }}</span></div></form></section>
+      <section class="safety-card adjustments-card" :class="{ 'adjustments-card--collapsed': !adjustmentsVisible }"><header class="safety-card__header"><h2><SafetyIcon name="settings" />System Adjustments</h2><button ref="hideControlsButton" type="button" class="adjustments-toggle" :aria-expanded="adjustmentsVisible" aria-controls="dashboard-adjustments-form" @click="toggleControls">{{ adjustmentsVisible ? 'Hide settings' : 'Show settings' }}</button></header><div v-show="adjustmentsVisible" id="dashboard-adjustments-form" class="safety-adjustments"><div class="adjustment-fields"><div v-for="field in fields" :key="field.key"><label :for="'safety-' + field.key">{{ field.label }}</label><output :id="'safety-' + field.key" class="adjustment-value" :aria-describedby="'help-' + field.key">{{ timingValue(field.key) }} s</output><small :id="'help-' + field.key">{{ field.help }}</small></div></div><div class="settings-save-row"><RouterLink class="save-safety-settings adjustments-link" to="/settings"><SafetyIcon name="settings" />Change in Settings</RouterLink><span v-if="timingsLoadFailed" class="save-feedback error" role="status">Timings are unavailable.</span></div></div></section>
       <section class="safety-card activity-card"><header class="safety-card__header"><h2><SafetyIcon name="document" />Recent Detection Activity</h2></header><div class="safety-activity-table"><table><thead><tr><th>Time</th><th>Event</th><th>Status</th></tr></thead><tbody><tr v-for="row in activity" :key="row.id"><td>{{ row.time }}</td><td>{{ row.event }}</td><td><span class="activity-status"><i :class="{ pending: !row.triggered }" />{{ row.triggered ? 'Triggered traffic light sequence' : 'Detection confirmation pending' }}</span></td></tr><tr v-if="!activity.length"><td colspan="3" class="activity-empty">Detection events will appear during this monitoring session.</td></tr></tbody></table></div></section>
     </div>
     <section class="safety-card system-process"><h2><SafetyIcon name="nodes" />System Process</h2><div class="process-step"><span class="process-icon"><SafetyIcon name="video" /></span><div><strong>Webcam</strong><p>Captures live video feed</p></div></div><SafetyIcon name="arrow" class="process-arrow" /><div class="process-step"><span class="process-icon"><SafetyIcon name="brain" /></span><div><strong>Pedestrian Detection</strong><p>AI in the browser detects pedestrians</p></div></div><SafetyIcon name="arrow" class="process-arrow" /><div class="process-step"><span class="process-icon"><SafetyIcon name="traffic" /></span><div><strong>Traffic-Light Sequence</strong><p>Triggers traffic light response</p></div></div></section>

@@ -10,7 +10,7 @@ import AppCard from '@/components/ui/AppCard.vue';
 const toast = useToast();
 const loading = ref(false);
 const saving = ref(false);
-const config = ref<SignalConfig>({ yellowMs: 3000, redMs: 20000 });
+const config = ref<SignalConfig>({ detectionThresholdMs: 5000, yellowMs: 3000, redMs: 20000, mode: 'auto', manualGreenMs: null, manualYellowMs: null, manualRedMs: null, manualPedWalkMs: null });
 const edit = ref(false);
 
 async function load() {
@@ -27,7 +27,8 @@ async function load() {
 async function save() {
   saving.value = true;
   try {
-    config.value = await updateSignalConfig(config.value);
+    // Only the automatic timings are sent; the other columns keep their values.
+    config.value = await updateSignalConfig({ yellowMs: config.value.yellowMs, redMs: config.value.redMs });
     edit.value = false;
     toast.add({ severity: 'success', summary: 'Saved', detail: 'Signal timers updated', life: 2500 });
   } catch (err) {

@@ -9,12 +9,20 @@ const { liveState, connected } = inject<{ liveState: Ref<LiveSystemState | null>
 const busy = ref(false); const active = ref('No test in progress');
 const results = ref<Array<{ timestamp: string; routine: string; result: string; detail: string }>>([]);
 const cycleSeconds = computed(() => liveState.value?.manualTimers ? (liveState.value.manualTimers.greenMs + liveState.value.manualTimers.yellowMs + liveState.value.manualTimers.redMs) / 1000 : null);
+// The wording must match what actually happened: with the Arduino transport
+// online the command goes to the controller; otherwise only the dashboard's
+// signal engine changed and no physical light moved.
+function commandDetail(): string {
+  return liveState.value?.arduino === 'online'
+    ? 'Command sent to the signal controller. Confirm the physical lights at the installation.'
+    : 'Command applied to the signal engine (dashboard updated). No physical controller is connected, so no lights changed.';
+}
 async function run(kind: 'status' | 'cycle' | 'walk') {
   busy.value = true;
   const label = kind === 'status' ? 'Connection check' : kind === 'cycle' ? 'Full cycle command' : 'Red phase command';
   active.value = label;
   try {
-    let detail = 'Controller accepted the command. Confirm physical signals at the installation.';
+    let detail = commandDetail();
     if (kind === 'status') { const state = await getLiveSystemStatus(); liveState.value = state; detail = 'Camera: ' + state.camera + '; Detection: ' + state.yolo + '; Controller: ' + state.arduino; }
     else if (kind === 'cycle') await triggerManualCycle();
     else await forcePhase('RED');

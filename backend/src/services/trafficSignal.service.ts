@@ -11,6 +11,8 @@ import { getSignalIo, yoloLive as liveEngine } from './yoloLive.instance.js';
 import type { SignalPhase, SignalTransition, SignalTransitionTrigger, TrafficSignalEngine } from './yoloLive.service.js';
 
 export interface SignalOptions {
+  /** How long a person must be seen before the caution (yellow) phase. */
+  detectionThresholdMs: number;
   yellowMs: number;
   redMs: number;
 }
@@ -115,14 +117,14 @@ export class TrafficSignalMachine {
     this.broadcastManualTimersChange();
     // Keep the manual timers in the live system state in sync as well.
     this.yoloLive.refreshSignalState();
-    // Keep the auto (YOLO) cycle in sync with the configured red stop duration.
-    if (timers.redMs !== undefined) {
-      this.yoloLive.setDurations({ stopDurationMs: timers.redMs });
-    }
+    // Manual timers only drive manual test cycles and forced phases; the
+    // automatic cycle's red time comes solely from signal_config.redMs
+    // (see updateOptions), so nothing is copied into the engine here.
   }
 
   private async persistConfig(): Promise<void> {
     const data: SignalConfigData = {
+      detectionThresholdMs: this.options.detectionThresholdMs,
       yellowMs: this.options.yellowMs,
       redMs: this.options.redMs,
       mode: this.mode,
@@ -243,11 +245,27 @@ export class TrafficSignalMachine {
     }
   }
 
-  /** Update timing options (e.g., from admin); applies from the next cycle. */
+  /**
+   * Update the automatic-cycle timings (e.g. from admin); persists them to
+   * signal_config (the mode and manual-timer columns keep their values) and
+   * applies them to the engine at once. New values take effect from the next
+   * cycle; a cycle already running keeps its timing.
+   */
   async updateOptions(newOpts: Partial<SignalOptions>): Promise<void> {
-    this.options = { ...this.options, ...newOpts };
-    // Persist to DB
-    await upsertConfig({ yellowMs: this.options.yellowMs, redMs: this.options.redMs });
+    // Skip undefined keys so a missing value (e.g. a saved row from before the
+    // detection column existed) keeps the current default instead of erasing it.
+    const defined = Object.fromEntries(Object.entries(newOpts).filter(([, value]) => value !== undefined));
+    this.options = { ...this.options, ...defined };
+    await upsertConfig({
+      detectionThresholdMs: this.options.detectionThresholdMs,
+      yellowMs: this.options.yellowMs,
+      redMs: this.options.redMs,
+    });
+    this.yoloLive.setDurations({
+      detectionThresholdMs: this.options.detectionThresholdMs,
+      yellowDurationMs: this.options.yellowMs,
+      stopDurationMs: this.options.redMs,
+    });
   }
 
   private broadcastModeChange(): void {
@@ -259,8 +277,13 @@ export class TrafficSignalMachine {
   }
 }
 
-// Load initial config from env; DB config will be applied later via initTrafficSignal()
-let initialOptions: SignalOptions = { yellowMs: config.signal.yellowMs, redMs: config.signal.redMs };
+// Load the env values as defaults; the saved timings (signal_config) are
+// applied over them via initTrafficSignal().
+let initialOptions: SignalOptions = {
+  detectionThresholdMs: config.yoloLive.detectionThresholdMs,
+  yellowMs: config.yoloLive.yellowDurationMs,
+  redMs: config.yoloLive.stopDurationMs,
+};
 
 export const trafficSignal = new TrafficSignalMachine(
   liveEngine,
@@ -300,13 +323,13 @@ export async function initTrafficSignal(): Promise<void> {
         pedWalkMs: dbConfig.manualPedWalkMs ?? 15000,
       });
     }
-    // Apply auto timers
-    await trafficSignal.updateOptions({ yellowMs: dbConfig.yellowMs, redMs: dbConfig.redMs });
-    // Keep the auto (YOLO) cycle stop duration in sync with the persisted red value.
-    const persistedRedMs = dbConfig.manualRedMs ?? dbConfig.redMs;
-    if (persistedRedMs !== undefined) {
-      liveEngine.setDurations({ stopDurationMs: persistedRedMs });
-    }
+    // Apply auto timings; updateOptions persists them and applies them to the
+    // live engine, so the saved timings survive a restart.
+    await trafficSignal.updateOptions({
+      detectionThresholdMs: dbConfig.detectionThresholdMs ?? undefined,
+      yellowMs: dbConfig.yellowMs,
+      redMs: dbConfig.redMs,
+    });
   }
 }
 
