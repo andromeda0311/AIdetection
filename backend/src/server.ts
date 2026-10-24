@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { app } from './app.js';
 import config from './config/env.js';
-import { AppDataSource, initDB } from './config/ormconfig.js';
+import { AppDataSource, initDB, runPendingMigrations } from './config/ormconfig.js';
 import { logger } from './utils/logger.js';
 import { trafficSignal, initTrafficSignal } from './services/trafficSignal.service.js';
 import { arduinoLive, initSignalIo, getSignalIo, yoloLive } from './services/yoloLive.instance.js';
@@ -23,6 +23,12 @@ signalIo.on('connection', (socket) => {
 });
 
 await initDB();
+// Bring the schema up to date before anything reads it. A failure stops the
+// start, so the host keeps the previous version running.
+if (config.runMigrationsOnStart) {
+  const applied = await runPendingMigrations();
+  logger.info(applied.length ? { applied } : {}, applied.length ? 'Database migrations applied' : 'Database schema up to date');
+}
 await initTrafficSignal();
 
 server.listen(config.port, config.host, () => {

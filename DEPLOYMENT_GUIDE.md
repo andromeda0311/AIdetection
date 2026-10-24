@@ -189,7 +189,7 @@ Known issue found (pre-existing, not changed): the live cycle never sets `pedSta
 
    The JWT values here only satisfy config validation; Render gets its own in Phase 5. On Windows PowerShell use `$env:NAME = 'value'` instead of `export`.
 4. The seed resets the administrator's credentials. Never run it on every start or as part of the build.
-5. Re-run `npm run db:migrate:prod` the same way whenever a new migration is added.
+5. New migrations no longer need this step: the backend applies pending migrations itself every time it starts (`RUN_MIGRATIONS_ON_START`, default `true`). If one fails, the new version does not start and Render keeps the previous one running; the error is in the deploy log. Set `RUN_MIGRATIONS_ON_START=false` on Render to go back to running `npm run db:migrate:prod` by hand (use the direct, non-pooled Neon string for that).
 
 **Done when:** Neon's table view shows the tables from `backend/src/migrations/` plus the `migrations` table, and the admin row exists.
 
@@ -371,7 +371,7 @@ These are not required for the first release. Each is its own piece of work.
 | --- | --- |
 | Frontend build | `frontend/` → `npm run build` → `dist/` |
 | Backend build / start | `backend/` → `npm run build` → `node dist/server.js` |
-| Migrations | `backend/` → `npm run db:migrate:prod` (from your laptop, with `DATABASE_URL` set) |
+| Migrations | Automatic on every backend start (`RUN_MIGRATIONS_ON_START=true`, the default); manual fallback: `backend/` → `npm run db:migrate:prod` with the direct Neon `DATABASE_URL` |
 | Admin seed (once) | `backend/` → `npm run db:seed:prod` |
 | Health (with database) | `https://<service>.onrender.com/health` |
 | Health (keep-alive) | `https://<service>.onrender.com/api/health` |

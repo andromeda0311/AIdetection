@@ -31,3 +31,12 @@ export async function initDB(): Promise<void> {
     await AppDataSource.initialize();
   }
 }
+
+/**
+ * Applies pending migrations (each in its own transaction) and returns their names.
+ * Run at startup so a deploy never serves new code against an old schema.
+ */
+export async function runPendingMigrations(): Promise<string[]> {
+  const applied = await AppDataSource.runMigrations({ transaction: 'each' });
+  return applied.map((migration) => migration.name);
+}

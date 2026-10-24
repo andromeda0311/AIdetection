@@ -14,6 +14,8 @@ const envSchema = z.object({
   DB_USER: z.string().default('postgres'),
   DB_PASSWORD: z.string().default('postgres'),
   DB_SSL: z.enum(['true', 'false']).default('false'),
+  // Apply pending migrations when the server starts (no manual step on deploy).
+  RUN_MIGRATIONS_ON_START: z.enum(['true', 'false']).default('true'),
 
   JWT_ACCESS_SECRET: z.string().min(16, 'JWT_ACCESS_SECRET must be at least 16 characters'),
   JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 characters'),
@@ -88,6 +90,7 @@ const config = {
 
   databaseUrl,
   dbSsl: env.DB_SSL === 'true',
+  runMigrationsOnStart: env.RUN_MIGRATIONS_ON_START === 'true',
 
   jwt: {
     accessSecret: env.JWT_ACCESS_SECRET,
