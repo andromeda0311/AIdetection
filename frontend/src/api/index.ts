@@ -3,7 +3,6 @@ import type {
   Detection,
   DetectionFrame,
   DetectionListResult,
-  SignalEvent,
   SignalState,
   SignalStatus,
   SignalMode,
@@ -80,13 +79,6 @@ export async function getSignalStatus(): Promise<SignalStatus> {
   return response.data.data;
 }
 
-export async function listSignalEvents(limit = 50): Promise<SignalEvent[]> {
-  const response = await api.get<Envelope<{ events: SignalEvent[] }>>('/signal/events', {
-    params: { limit },
-  });
-  return response.data.data.events;
-}
-
 export interface AuditLogFilters {
   state?: 'GREEN' | 'YELLOW' | 'RED';
   triggeredBy?: 'auto' | 'admin';
@@ -116,11 +108,6 @@ export async function getRecentActivity(limit = 5): Promise<DetectionActivity[]>
 
 export async function exportAuditLogsCsv(): Promise<void> {
   await downloadFile('/audit/export', 'traffic-light-audit-logs.csv');
-}
-
-export async function forceSignal(state: SignalState): Promise<SignalStatus> {
-  const response = await api.post<Envelope<SignalStatus>>(`/signal/${state.toLowerCase()}`);
-  return response.data.data;
 }
 
 // New API functions for mode and manual timers
@@ -193,8 +180,4 @@ export async function downloadFile(url: string, filename: string): Promise<void>
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(objectUrl);
-}
-
-export async function exportSignalEventsCSV(): Promise<void> {
-  await downloadFile('/signal/events/export', 'signal-events.csv');
 }

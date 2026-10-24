@@ -92,23 +92,6 @@ export interface RecordingStatus {
   fileName: string | null;
 }
 
-export interface RecordingInfo {
-  id: string;
-  filename: string;
-  path: string;
-  size: number;
-  duration: number;
-  createdAt: string;
-}
-
-export interface SignalEvent {
-  id: string;
-  state: SignalState;
-  triggered_by: 'auto' | 'admin';
-  detection_id: string | null;
-  created_at: string;
-}
-
 export interface AuditLog {
   id: string;
   state: SignalState;
